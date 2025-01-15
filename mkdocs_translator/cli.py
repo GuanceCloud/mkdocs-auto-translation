@@ -7,38 +7,38 @@ from .utils import get_translatable_files, copy_resources
 from tqdm import tqdm
 
 @click.command()
-@click.option('--source', required=True, type=click.Path(exists=True), help='源文档目录')
-@click.option('--target', required=True, type=click.Path(), help='目标翻译目录')
-@click.option('--target-language', required=True, help='目标语言代码')
-@click.option('--api-key', help='DifyAI API 密钥')
-@click.option('--user', help='用户名')
-@click.option('--query', help='查询语句')
-@click.option('--response-mode', help='响应模式', type=click.Choice(['streaming', 'blocking']), default='streaming')
+@click.option('--source', required=True, type=click.Path(exists=True), help='The source document directory')
+@click.option('--target', required=True, type=click.Path(), help='The target translation directory')
+@click.option('--target-language', required=True, help='The target language code')
+@click.option('--api-key', help='DifyAI API key')
+@click.option('--user', help='User name')
+@click.option('--query', help='Query string', default='请翻译。')
+@click.option('--response-mode', help='Response mode', type=click.Choice(['streaming', 'blocking']), default='streaming')
 def translate(source: str, target: str,
              target_language: str, api_key: Optional[str], user: Optional[str], query: Optional[str], response_mode: str):
-    """翻译MkDocs文档"""
+    """Translate MkDocs documents"""
     source_path = Path(source)
     target_path = Path(target)
     metadata_path = source_path / 'metadata.json'
-    
-    # 初始化组件
+
+    # Initialize components
     translator = DocumentTranslator(target_language, user=user, query=query, response_mode=response_mode, api_key=api_key)
     metadata_manager = MetadataManager(metadata_path)
     
-    # 获取需要翻译的文件
+    # Get files to translate
     files_to_translate = get_translatable_files(source_path)
     
-    # 创建目标目录
+    # Create target directory
     target_path.mkdir(parents=True, exist_ok=True)
     
-    # 复制资源文件
+    # Copy resource files
     copy_resources(source_path, target_path)
     
-    # 翻译文件
+    # Translate files
     success_count = 0
     error_count = 0
     
-    for source_file in tqdm(files_to_translate, desc="翻译进度"):
+    for source_file in tqdm(files_to_translate, desc="Translation progress"):
         if not metadata_manager.needs_translation(source_file):
             continue
             
@@ -53,10 +53,10 @@ def translate(source: str, target: str,
         else:
             error_count += 1
     
-    # 打印总结
-    click.echo(f"\n翻译完成！")
-    click.echo(f"成功：{success_count} 个文件")
-    click.echo(f"失败：{error_count} 个文件")
+    # Print summary
+    click.echo(f"\nTranslation completed!")
+    click.echo(f"Success: {success_count} files")
+    click.echo(f"Failed: {error_count} files")
 
 if __name__ == '__main__':
     translate() 

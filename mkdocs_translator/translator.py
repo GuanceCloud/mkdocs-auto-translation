@@ -2,21 +2,22 @@ import os
 from pathlib import Path
 from typing import Optional, Dict, List
 import requests
+import json
 from tqdm import tqdm
 
 class DocumentTranslator:
-    """处理文档翻译的主类"""
+    """The main class for handling document translation."""
     
-    def __init__(self, target_lang: str, user: str, query: str = "请翻译。", response_mode: str = "streaming", api_key: Optional[str] = None):
+    def __init__(self, target_lang: str, user: str, query: str, response_mode: str = "streaming", api_key: Optional[str] = None):
         """
-        初始化翻译器
+        Initialize the translator.
         
         Args:
-            target_lang: 目标语言代码
-            user: 用户名
-            query: 查询语句
-            response_mode: 响应模式，可选值为 "streaming" 或 "blocking"
-            api_key: Dify AI API密钥
+            target_lang: The target language code
+            user: The user name
+            query: The query string
+            response_mode: The response mode, optional values are "streaming" or "blocking".
+            api_key: The Dify AI API key
         """
         self.target_lang = target_lang
         self.user = user
@@ -35,13 +36,13 @@ class DocumentTranslator:
         
     def translate_text(self, text: str) -> str:
         """
-        使用Dify AI API翻译文本
+        Translate text using the Dify AI API
         
         Args:
-            text: 要翻译的文本
+            text: The text to translate
             
         Returns:
-            翻译后的文本
+            The translated text
         """
         try:
             payload = {
@@ -65,29 +66,41 @@ class DocumentTranslator:
             if response.status_code != 200:
                 raise TranslationError(f"API request failed with status code {response.status_code}: {response.text}")
             
-            # 用于存储完整的翻译结果
+            # Used to store the complete translation results.
             full_translation = []
             
-            # 创建进度条
+            # Create a progress bar
             pbar = tqdm(desc="Translating", unit=" chunks")
             
-            # 处理流式响应
-            for line in response.iter_lines():
-                if line:
-                    try:
-                        data = response.json()
-                        if "answer" in data:
-                            chunk = data["answer"]
-                            full_translation.append(chunk)
-                            pbar.update(1)  # 更新进度
-                        elif "error" in data:
-                            raise TranslationError(f"API error: {data['error']}")
-                    except Exception as e:
-                        continue
+            if self.response_mode == "streaming":
+                # Process streaming responses
+                for line in response.iter_lines(decode_unicode=True):
+                    if line:
+                        try:
+                            # Remove the "data: " prefix (if it exists)
+                            if line.startswith('data: '):
+                                line = line[6:]
+                            data = json.loads(line)
+                            if "answer" in data:
+                                chunk = data["answer"]
+                                full_translation.append(chunk)
+                                pbar.update(1)
+                            elif "error" in data:
+                                raise TranslationError(f"API error: {data['error']}")
+                        except json.JSONDecodeError:
+                            continue
+            else:
+                # Process blocking mode responses
+                data = response.json()
+                if "answer" in data:
+                    full_translation.append(data["answer"])
+                    pbar.update(1)
+                elif "error" in data:
+                    raise TranslationError(f"API error: {data['error']}")
             
-            pbar.close()  # 关闭进度条
+            pbar.close()
             
-            # 合并所有翻译片段
+            # Merge all translation fragments
             final_translation = "".join(full_translation)
             
             if not final_translation:
@@ -100,14 +113,14 @@ class DocumentTranslator:
 
     def translate_file(self, source_path: Path, target_path: Path) -> bool:
         """
-        翻译单个文件
+        Translate a single file
         
         Args:
-            source_path: 源文件路径
-            target_path: 目标文件路径
+            source_path: The source file path
+            target_path: The target file path
             
         Returns:
-            bool: 翻译是否成功
+            bool: Whether the translation is successful
         """
         try:
             with open(source_path, 'r', encoding='utf-8') as f:
@@ -125,5 +138,5 @@ class DocumentTranslator:
             return False
 
 class TranslationError(Exception):
-    """翻译过程中的错误"""
+    """Error during translation"""
     pass 

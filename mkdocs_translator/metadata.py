@@ -2,54 +2,55 @@ import json
 from pathlib import Path
 from typing import Dict, Optional
 import hashlib
+from datetime import datetime
 
 class MetadataManager:
-    """管理翻译文件的元数据"""
+    """Manage metadata for translated files"""
     
     def __init__(self, metadata_path: Path):
         """
-        初始化元数据管理器
+        Initialize the metadata manager
         
         Args:
-            metadata_path: 元数据文件路径
+            metadata_path: The path to the metadata file
         """
         self.metadata_path = metadata_path
         self.metadata = self._load_metadata()
         
     def _load_metadata(self) -> Dict:
-        """加载元数据文件"""
+        """Load metadata from file"""
         if self.metadata_path.exists():
             with open(self.metadata_path, 'r', encoding='utf-8') as f:
                 return json.load(f)
         return {}
         
     def save_metadata(self):
-        """保存元数据到文件"""
+        """Save metadata to file"""
         with open(self.metadata_path, 'w', encoding='utf-8') as f:
             json.dump(self.metadata, f, indent=2)
             
     def get_file_hash(self, file_path: Path) -> str:
         """
-        计算文件的哈希值
+        Calculate the hash value of a file
         
         Args:
-            file_path: 文件路径
+            file_path: The path to the file
             
         Returns:
-            文件的SHA256哈希值
+            The SHA256 hash value of the file
         """
         with open(file_path, 'rb') as f:
             return hashlib.sha256(f.read()).hexdigest()
             
     def needs_translation(self, file_path: Path) -> bool:
         """
-        检查文件是否需要翻译
+        Check if a file needs translation
         
         Args:
-            file_path: 文件路径
+            file_path: The path to the file
             
         Returns:
-            bool: 如果文件需要翻译则返回True
+            bool: True if the file needs translation, False otherwise
         """
         current_hash = self.get_file_hash(file_path)
         file_key = str(file_path)
@@ -61,16 +62,16 @@ class MetadataManager:
         
     def update_file_status(self, file_path: Path, success: bool):
         """
-        更新文件的翻译状态
+        Update the translation status of a file
         
         Args:
-            file_path: 文件路径
-            success: 翻译是否成功
+            file_path: The path to the file
+            success: Whether the translation is successful
         """
         if success:
             file_key = str(file_path)
             self.metadata[file_key] = {
                 'hash': self.get_file_hash(file_path),
-                'last_translated': str(Path.ctime(file_path))
+                'last_translated': datetime.now().isoformat()
             }
             self.save_metadata() 

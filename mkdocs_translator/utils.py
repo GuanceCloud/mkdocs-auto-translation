@@ -3,13 +3,13 @@ from typing import Set
 
 def get_translatable_files(directory: Path) -> Set[Path]:
     """
-    获取目录中可翻译的文件
+    Get translatable files in a directory
     
     Args:
-        directory: 要扫描的目录
+        directory: The directory to scan
         
     Returns:
-        可翻译文件的集合
+        A set of translatable files
     """
     translatable_extensions = {'.md', '.pages'}
     files = set()
@@ -21,11 +21,11 @@ def get_translatable_files(directory: Path) -> Set[Path]:
 
 def copy_resources(source_dir: Path, target_dir: Path):
     """
-    复制非翻译文件到目标目录
+    Copy non-translatable files to the target directory
     
     Args:
-        source_dir: 源目录
-        target_dir: 目标目录
+        source_dir: The source directory
+        target_dir: The target directory
     """
     non_translatable_patterns = ['*.png', '*.jpg', '*.jpeg', '*.gif', '*.css', '*.js']
     
