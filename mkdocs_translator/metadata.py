@@ -7,14 +7,16 @@ from datetime import datetime
 class MetadataManager:
     """Manage metadata for translated files"""
     
-    def __init__(self, metadata_path: Path):
+    def __init__(self, metadata_path: Path, source_path: Path):
         """
         Initialize the metadata manager
         
         Args:
             metadata_path: The path to the metadata file
+            source_path: The path to the source directory
         """
         self.metadata_path = metadata_path
+        self.source_path = source_path
         self.metadata = self._load_metadata()
         
     def _load_metadata(self) -> Dict:
@@ -39,7 +41,7 @@ class MetadataManager:
         Returns:
             The SHA256 hash value of the file
         """
-        with open(file_path, 'rb') as f:
+        with open(self.source_path / file_path, 'rb') as f:
             return hashlib.sha256(f.read()).hexdigest()
             
     def needs_translation(self, file_path: Path) -> bool:

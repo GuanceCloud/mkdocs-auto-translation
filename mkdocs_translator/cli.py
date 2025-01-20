@@ -23,7 +23,7 @@ def translate(source: str, target: str,
 
     # Initialize components
     translator = DocumentTranslator(target_language, user=user, query=query, response_mode=response_mode, api_key=api_key)
-    metadata_manager = MetadataManager(metadata_path)
+    metadata_manager = MetadataManager(metadata_path, source_path)
     
     # Get files to translate
     files_to_translate = get_translatable_files(source_path)
@@ -39,17 +39,17 @@ def translate(source: str, target: str,
     error_count = 0
     
     for source_file in tqdm(files_to_translate, desc="Translation progress"):
-        if not metadata_manager.needs_translation(source_file):
-            continue
-            
         relative_path = source_file.relative_to(source_path)
+        if not metadata_manager.needs_translation(relative_path):
+            continue
+
         target_file = target_path / relative_path
         
         success = translator.translate_file(source_file, target_file)
         
         if success:
             success_count += 1
-            metadata_manager.update_file_status(source_file, True)
+            metadata_manager.update_file_status(relative_path, True)
         else:
             error_count += 1
     
