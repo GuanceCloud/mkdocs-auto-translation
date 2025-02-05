@@ -75,20 +75,33 @@ class DocumentTranslator:
             if self.response_mode == "streaming":
                 # Process streaming responses
                 for line in response.iter_lines(decode_unicode=True):
-                    if line:
-                        try:
-                            # Remove the "data: " prefix (if it exists)
-                            if line.startswith('data: '):
-                                line = line[6:]
+                    # print(line)
+                    if not line:
+                        continue
+                        
+                    try:
+                        # Remove the "data: " prefix (if it exists)
+                        if line.startswith('data: '):
+                            line = line[6:]
                             data = json.loads(line)
-                            if "answer" in data:
-                                chunk = data["answer"]
-                                full_translation.append(chunk)
-                                pbar.update(1)
-                            elif "error" in data:
-                                raise TranslationError(f"API error: {data['error']}")
-                        except json.JSONDecodeError:
+                        else:
                             continue
+                        
+                        if "event" in data:
+                            message_event = data["event"]
+
+                        if message_event == "message_end":
+                            break
+                            
+                        # process translation result
+                        if message_event == "agent_message" and "answer" in data:
+                            chunk = data["answer"]
+                            full_translation.append(chunk)
+                            pbar.update(1)
+                        elif "error" in data:
+                            raise TranslationError(f"API error: {data['error']}")
+                    except json.JSONDecodeError as e:
+                        continue
             else:
                 # Process blocking mode responses
                 data = response.json()
@@ -99,7 +112,7 @@ class DocumentTranslator:
                     raise TranslationError(f"API error: {data['error']}")
             
             pbar.close()
-            
+
             # Merge all translation fragments
             final_translation = "".join(full_translation)
             
