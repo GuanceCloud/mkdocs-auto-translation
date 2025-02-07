@@ -30,6 +30,11 @@ class MetadataManager:
         """Save metadata to file"""
         with open(self.metadata_path, 'w', encoding='utf-8') as f:
             json.dump(self.metadata, f, indent=2)
+
+    def clear_metadata(self):
+        """Clear metadata"""
+        self.metadata = {}
+        self.save_metadata()
             
     def get_file_hash(self, file_path: Path) -> str:
         """
@@ -62,13 +67,14 @@ class MetadataManager:
             
         return self.metadata[file_key]['hash'] != current_hash
         
-    def update_file_status(self, file_path: Path, success: bool):
+    def update_file_status(self, file_path: Path, success: bool, translated_metadata: Dict = None):
         """
         Update the translation status of a file
         
         Args:
             file_path: The path to the file
             success: Whether the translation is successful
+            translated_metadata: The metadata of the file
         """
         if success:
             file_key = str(file_path)
@@ -76,4 +82,9 @@ class MetadataManager:
                 'hash': self.get_file_hash(file_path),
                 'last_translated': datetime.now().isoformat()
             }
+
+            if translated_metadata:
+                self.metadata[file_key]['usage'] = translated_metadata.get('usage', {})
+                # self.metadata[file_key]['request_id'] = last_file_metadata.get('request_id')
+
             self.save_metadata() 

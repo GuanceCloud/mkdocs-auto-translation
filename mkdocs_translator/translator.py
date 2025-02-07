@@ -1,9 +1,11 @@
 import os
 from pathlib import Path
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Tuple
 import requests
 import json
 from tqdm import tqdm
+import hashlib
+from datetime import datetime
 
 class DocumentTranslator:
     """The main class for handling document translation."""
@@ -34,7 +36,7 @@ class DocumentTranslator:
         }
         
         
-    def translate_text(self, text: str) -> str:
+    def translate_text(self, text: str) -> Tuple[str, Dict]:
         """
         Translate text using the Dify AI API
         
@@ -45,86 +47,115 @@ class DocumentTranslator:
             The translated text
         """
         try:
-            payload = {
-                "inputs": {
-                    "target_language": self.target_lang,
-                    "input_content": text
-                },
-                "query": self.query,
-                "response_mode": self.response_mode,
-                "conversation_id": "",
-                "user": self.user
-            }
-            
-            response = requests.post(
-                self.api_url,
-                headers=self.headers,
-                json=payload,
-                stream=self.response_mode == "streaming"
-            )
-            
-            if response.status_code != 200:
-                raise TranslationError(f"API request failed with status code {response.status_code}: {response.text}")
-            
-            # Used to store the complete translation results.
             full_translation = []
+            conversation_id = ""
+            metadata = {}
             
-            # Create a progress bar
-            pbar = tqdm(desc="Translating", unit=" chunks")
-            
-            if self.response_mode == "streaming":
-                # Process streaming responses
-                for line in response.iter_lines(decode_unicode=True):
-                    # print(line)
-                    if not line:
-                        continue
-                        
-                    try:
-                        # Remove the "data: " prefix (if it exists)
-                        if line.startswith('data: '):
-                            line = line[6:]
-                            data = json.loads(line)
-                        else:
-                            continue
-                        
-                        if "event" in data:
-                            message_event = data["event"]
-
-                        if message_event == "message_end":
-                            break
-                            
-                        # process translation result
-                        if message_event == "agent_message" and "answer" in data:
-                            chunk = data["answer"]
-                            full_translation.append(chunk)
-                            pbar.update(1)
-                        elif "error" in data:
-                            raise TranslationError(f"API error: {data['error']}")
-                    except json.JSONDecodeError as e:
-                        continue
-            else:
-                # Process blocking mode responses
-                data = response.json()
-                if "answer" in data:
-                    full_translation.append(data["answer"])
-                    pbar.update(1)
-                elif "error" in data:
-                    raise TranslationError(f"API error: {data['error']}")
-            
-            pbar.close()
-
-            # Merge all translation fragments
-            final_translation = "".join(full_translation)
-            
-            if not final_translation:
-                raise TranslationError("No translation received from API")
+            while True:
+                payload = {
+                    "inputs": {
+                        "target_language": self.target_lang,
+                        "input_content": text
+                    },
+                    "query": self.query if not conversation_id else "请继续翻译",
+                    "response_mode": self.response_mode,
+                    "conversation_id": conversation_id,
+                    "user": self.user
+                }
                 
-            return final_translation
+                response = requests.post(
+                    self.api_url,
+                    headers=self.headers,
+                    json=payload,
+                    stream=self.response_mode == "streaming"
+                )
+                
+                if response.status_code != 200:
+                    raise TranslationError(f"API request failed with status code {response.status_code}: {response.text}")
+                
+                current_translation = []
+                reached_token_limit = False
+                
+                # Create a progress bar
+                pbar = tqdm(desc="Translating", unit=" chunks")
+                
+                if self.response_mode == "streaming":
+                    for line in response.iter_lines(decode_unicode=True):
+                        if not line:
+                            continue
+                            
+                        try:
+                            if line.startswith('data: '):
+                                line = line[6:]
+                            data = json.loads(line)
+                            
+                            # process message end event
+                            if "event" in data and data["event"] == "message_end":
+                                if "metadata" in data:
+                                    metadata = data["metadata"]
+                                    if "usage" in metadata:
+                                        usage = metadata["usage"]
+                                        if usage.get("completion_tokens") == 8192:
+                                            reached_token_limit = True
+                                            conversation_id = data.get("conversation_id", "")
+                                break
+                                
+                            if "answer" in data:
+                                chunk = data["answer"]
+                                current_translation.append(chunk)
+                                if "metadata" in data:
+                                    metadata = data["metadata"]
+                                pbar.update(1)
+                            elif "error" in data:
+                                raise TranslationError(f"API error: {data['error']}")
+                        except json.JSONDecodeError:
+                            continue
+                else:
+                    # Process blocking mode responses
+                    data = response.json()
+                    if "answer" in data:
+                        current_translation.append(data["answer"])
+                        if "metadata" in data:
+                            metadata = data["metadata"]
+                        pbar.update(1)
+                    elif "error" in data:
+                        raise TranslationError(f"API error: {data['error']}")
+                
+                pbar.close()
+                
+                # merge current translation result, handle possible overlap
+                current_text = "".join(current_translation)
+                
+                if full_translation:
+                    # find overlap
+                    last_part = full_translation[-1][-100:]  # use last 100 characters for overlap search
+                    overlap_start = current_text.find(last_part)
+                    
+                    if overlap_start != -1:
+                        # if overlap found, only add new content after overlap
+                        current_text = current_text[overlap_start + len(last_part):]
+                
+                full_translation.append(current_text)
+                
+                last_metadata = {}
+                if metadata:
+                    last_metadata = metadata
+                    if "usage" in metadata:
+                        last_metadata['usage'] = metadata['usage']
+                    # if "request_id" in metadata:
+                    #     last_metadata['request_id'] = metadata['request_id']
+                
+                if not reached_token_limit:
+                    break
+                    
+                # print("\nReached token limit, continuing translation...")
+            
+            return "".join(full_translation), last_metadata
                 
         except Exception as e:
             raise TranslationError(f"Translation failed: {str(e)}")
 
-    def translate_file(self, source_path: Path, target_path: Path) -> bool:
+    def translate_file(self, source_path: Path, target_path: Path) -> Tuple[bool, Dict]:
         """
         Translate a single file
         
@@ -133,22 +164,23 @@ class DocumentTranslator:
             target_path: The target file path
             
         Returns:
-            bool: Whether the translation is successful
+            Tuple[bool, Dict]: Whether the translation is successful and the metadata of the file
         """
         try:
             with open(source_path, 'r', encoding='utf-8') as f:
                 content = f.read()
                 
-            translated_content = self.translate_text(content)
+            translated_content, translated_metadata = self.translate_text(content)
             
             target_path.parent.mkdir(parents=True, exist_ok=True)
             with open(target_path, 'w', encoding='utf-8') as f:
                 f.write(translated_content)
                 
-            return True
+            return True, translated_metadata
         except Exception as e:
             print(f"Error translating {source_path}: {str(e)}")
-            return False
+            return False, None
+
 
 class TranslationError(Exception):
     """Error during translation"""
