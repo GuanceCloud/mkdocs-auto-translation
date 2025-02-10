@@ -43,6 +43,15 @@ python -m mkdocs_translator.cli \
 --user "your-username"
 ```
 
+5. 添加黑名单文件：
+
+```bash
+echo "infra-logmine.md" > .translate_blacklist
+``` 
+
+.translate_blacklist 文件位于 source 根目录中，文件中的每一行表示一个文件路径，如果文件路径在源目录中，则不会被翻译。
+
+
 ## 注意事项
 
 - 请确保目标目录存在，否则会创建一个新目录。

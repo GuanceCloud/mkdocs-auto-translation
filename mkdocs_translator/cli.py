@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Optional
 from .translator import DocumentTranslator
 from .metadata import MetadataManager
-from .utils import get_translatable_files, copy_resources
+from .utils import get_translatable_files, copy_resources, load_blacklist
 from tqdm import tqdm
 
 @click.command()
@@ -15,20 +15,26 @@ from tqdm import tqdm
 @click.option('--query', help='Query string', default='请翻译。')
 @click.option('--response-mode', help='Response mode', type=click.Choice(['streaming', 'blocking']), default='streaming')
 def translate(source: str, target: str,
-             target_language: str, api_key: Optional[str], user: Optional[str], query: Optional[str], response_mode: str):
+             target_language: str, api_key: Optional[str], user: Optional[str], 
+             query: Optional[str], response_mode: str):
     """Translate MkDocs documents"""
     source_path = Path(source)
     target_path = Path(target)
     metadata_path = source_path / 'metadata.json'
     last_metadata_path = source_path / 'last-metadata.json'
+    blacklist_file = source_path / '.translate-blacklist'
 
+    # Load blacklist
+    blacklist = load_blacklist(source_path / blacklist_file)
+    
     # Initialize components
     translator = DocumentTranslator(target_language, user=user, query=query, response_mode=response_mode, api_key=api_key)
     metadata_manager = MetadataManager(metadata_path, source_path)
     last_metadata_manager = MetadataManager(last_metadata_path, source_path)
     
     # Get files to translate
-    files_to_translate = get_translatable_files(source_path)
+    files_to_translate = [f for f in get_translatable_files(source_path) 
+                         if str(f.relative_to(source_path)) not in blacklist]
     
     # Create target directory
     target_path.mkdir(parents=True, exist_ok=True)

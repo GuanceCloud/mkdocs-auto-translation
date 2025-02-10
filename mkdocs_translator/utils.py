@@ -44,3 +44,24 @@ def copy_resources(source_dir: Path, target_dir: Path):
         # Only copy if target file doesn't exist
         if not target_file.exists():
             target_file.write_bytes(source_file.read_bytes()) 
+
+def load_blacklist(blacklist_path: Path) -> set:
+    """
+    Load blacklist file containing paths to ignore during translation.
+    Each line in the file should be a relative path from source directory.
+    
+    Args:
+        blacklist_path: Path to the blacklist file
+        
+    Returns:
+        Set of paths to ignore
+    """
+    blacklist = set()
+    if blacklist_path.exists():
+        with open(blacklist_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                # Strip whitespace and ignore empty lines and comments
+                line = line.strip()
+                if line and not line.startswith('#'):
+                    blacklist.add(line)
+    return blacklist 
