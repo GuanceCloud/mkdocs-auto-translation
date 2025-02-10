@@ -49,7 +49,16 @@ class DocumentTranslator:
         try:
             full_translation = []
             conversation_id = ""
-            metadata = {}
+            # Initialize cumulative usage
+            cumulative_usage = {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+                "prompt_price": 0.0,
+                "completion_price": 0.0,
+                "total_price": 0.0,
+                "currency": "USD"
+            }
             
             while True:
                 payload = {
@@ -83,7 +92,9 @@ class DocumentTranslator:
                     for line in response.iter_lines(decode_unicode=True):
                         if not line:
                             continue
-                            
+
+                        print(line)    
+                        
                         try:
                             if line.startswith('data: '):
                                 line = line[6:]
@@ -95,6 +106,14 @@ class DocumentTranslator:
                                     metadata = data["metadata"]
                                     if "usage" in metadata:
                                         usage = metadata["usage"]
+                                        # Accumulate usage data
+                                        cumulative_usage["prompt_tokens"] += int(usage.get("prompt_tokens", 0))
+                                        cumulative_usage["completion_tokens"] += int(usage.get("completion_tokens", 0))
+                                        cumulative_usage["total_tokens"] = cumulative_usage["prompt_tokens"] + cumulative_usage["completion_tokens"]
+                                        cumulative_usage["prompt_price"] += float(usage.get("prompt_price", 0))
+                                        cumulative_usage["completion_price"] += float(usage.get("completion_price", 0))
+                                        cumulative_usage["total_price"] += float(usage.get("total_price", 0))
+                                        
                                         if usage.get("completion_tokens") == 8192:
                                             reached_token_limit = True
                                             conversation_id = data.get("conversation_id", "")
@@ -117,6 +136,15 @@ class DocumentTranslator:
                         current_translation.append(data["answer"])
                         if "metadata" in data:
                             metadata = data["metadata"]
+                            if "usage" in metadata:
+                                usage = metadata["usage"]
+                                # Accumulate usage data
+                                cumulative_usage["prompt_tokens"] += int(usage.get("prompt_tokens", 0))
+                                cumulative_usage["completion_tokens"] += int(usage.get("completion_tokens", 0))
+                                cumulative_usage["total_tokens"] = cumulative_usage["prompt_tokens"] + cumulative_usage["completion_tokens"]
+                                cumulative_usage["prompt_price"] += float(usage.get("prompt_price", 0))
+                                cumulative_usage["completion_price"] += float(usage.get("completion_price", 0))
+                                cumulative_usage["total_price"] += float(usage.get("total_price", 0))
                         pbar.update(1)
                     elif "error" in data:
                         raise TranslationError(f"API error: {data['error']}")
@@ -139,11 +167,10 @@ class DocumentTranslator:
                 
                 last_metadata = {}
                 if metadata:
-                    last_metadata = metadata
+                    last_metadata = metadata.copy()
                     if "usage" in metadata:
-                        last_metadata['usage'] = metadata['usage']
-                    # if "request_id" in metadata:
-                    #     last_metadata['request_id'] = metadata['request_id']
+                        # Replace the final usage data with cumulative totals
+                        last_metadata['usage'] = cumulative_usage
                 
                 if not reached_token_limit:
                     break
