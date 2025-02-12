@@ -93,7 +93,7 @@ class DocumentTranslator:
                         if not line:
                             continue
 
-                        print(line)    
+                        # print(line)    
                         
                         try:
                             if line.startswith('data: '):
