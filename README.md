@@ -39,8 +39,18 @@ python -m mkdocs_translator.cli \
 --source /path/to/source \
 --target /path/to/target \
 --target-language "英语" \
---api-key "your-dify-api-key" \
 --user "your-username"
+```
+
+或者在参数中指定 Dify API Key：
+
+```bash
+python -m mkdocs_translator.cli \
+--source /path/to/source \
+--target /path/to/target \
+--target-language "英语" \
+--user "your-username" \
+--api-key "your-dify-api-key"
 ```
 
 5. 添加黑名单文件：

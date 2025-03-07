@@ -30,8 +30,8 @@ class DocumentTranslator:
         if not self.api_key:
             raise ValueError("Dify API key must be provided either through api_key parameter or DIFY_API_KEY environment variable")
         
-        # self.api_url = "https://dify.guance.com/v1/chat-messages"
-        self.api_url = "https://dify.guance.com/v1/completion-messages"
+        self.api_url = "https://dify.guance.com/v1/chat-messages"
+        # self.api_url = "https://dify.guance.com/v1/completion-messages"
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
@@ -66,9 +66,9 @@ class DocumentTranslator:
                 payload = {
                     "inputs": {
                         "target_language": self.target_lang,
-                        "input_content": text,
-                        "query": self.query if not conversation_id else "请继续翻译"
+                        "input_content": text
                     },
+                    "query": self.query if not conversation_id else "请继续翻译",
                     "response_mode": self.response_mode,
                     "conversation_id": conversation_id,
                     "user": self.user
@@ -120,7 +120,9 @@ class DocumentTranslator:
                                             reached_token_limit = True
                                             conversation_id = data.get("conversation_id", "")
 
+                                            print("data: ", line)
                                             print(f"Reached token limit: {usage.get('completion_tokens')} tokens, conversation_id: {conversation_id}")
+                                # print("message end: ", line)
                                 break
                                 
                             if "answer" in data:
