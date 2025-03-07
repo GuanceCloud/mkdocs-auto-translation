@@ -1,6 +1,7 @@
 import click
 from pathlib import Path
 from typing import Optional
+import logging
 from .translator import DocumentTranslator
 from .metadata import MetadataManager
 from .utils import get_translatable_files, copy_resources, load_blacklist
@@ -18,6 +19,13 @@ def translate(source: str, target: str,
              target_language: str, api_key: Optional[str], user: Optional[str], 
              query: Optional[str], response_mode: str):
     """Translate MkDocs documents"""
+    # set log module
+    logging.basicConfig(
+        filename='translation.log',
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s'
+    )
+    
     source_path = Path(source)
     target_path = Path(target)
     metadata_path = source_path / 'metadata.json'

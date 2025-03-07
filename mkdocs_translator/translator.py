@@ -6,6 +6,7 @@ import json
 from tqdm import tqdm
 import hashlib
 from datetime import datetime
+import logging  # 保留导入，因为还需要使用 logging.info()
 
 class DocumentTranslator:
     """The main class for handling document translation."""
@@ -29,7 +30,8 @@ class DocumentTranslator:
         if not self.api_key:
             raise ValueError("Dify API key must be provided either through api_key parameter or DIFY_API_KEY environment variable")
         
-        self.api_url = "https://dify.guance.com/v1/chat-messages"
+        # self.api_url = "https://dify.guance.com/v1/chat-messages"
+        self.api_url = "https://dify.guance.com/v1/completion-messages"
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
@@ -64,9 +66,9 @@ class DocumentTranslator:
                 payload = {
                     "inputs": {
                         "target_language": self.target_lang,
-                        "input_content": text
+                        "input_content": text,
+                        "query": self.query if not conversation_id else "请继续翻译"
                     },
-                    "query": self.query if not conversation_id else "请继续翻译",
                     "response_mode": self.response_mode,
                     "conversation_id": conversation_id,
                     "user": self.user
@@ -114,9 +116,11 @@ class DocumentTranslator:
                                         cumulative_usage["completion_price"] += float(usage.get("completion_price", 0))
                                         cumulative_usage["total_price"] += float(usage.get("total_price", 0))
                                         
-                                        if usage.get("completion_tokens") == 8192:
+                                        if usage.get("completion_tokens") >= 8192:
                                             reached_token_limit = True
                                             conversation_id = data.get("conversation_id", "")
+
+                                            print(f"Reached token limit: {usage.get('completion_tokens')} tokens, conversation_id: {conversation_id}")
                                 break
                                 
                             if "answer" in data:
