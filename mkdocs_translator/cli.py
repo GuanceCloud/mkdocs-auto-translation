@@ -40,10 +40,22 @@ def translate(source: str, target: str,
     metadata_manager = MetadataManager(metadata_path, source_path)
     last_metadata_manager = MetadataManager(last_metadata_path, source_path)
     
+    def is_blacklisted(file_path: str, blacklist: set) -> bool:
+        """Check if a file path matches any blacklist pattern"""
+
+        # Check exact match
+        if file_path in blacklist:
+            return True
+        # Check directory prefix match
+        return any(
+            (pattern.endswith('/') and file_path.startswith(pattern)) 
+            for pattern in blacklist
+        )
+    
     # Get files to translate
     files_to_translate = [f for f in get_translatable_files(source_path) 
-                         if str(f.relative_to(source_path)) not in blacklist]
-    
+                         if not is_blacklisted(str(f.relative_to(source_path)), blacklist)]
+
     # Create target directory
     target_path.mkdir(parents=True, exist_ok=True)
     

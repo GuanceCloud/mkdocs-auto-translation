@@ -62,6 +62,10 @@ python -m mkdocs_translator.cli \
 ```
 # 黑名单文件
 
+# 前缀匹配
+billing/faq/
+
+# 精确匹配
 billing/commercial-version.md
 ``` 
 
