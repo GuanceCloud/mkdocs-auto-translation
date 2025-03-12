@@ -62,7 +62,7 @@ python -m mkdocs_translator.cli \
 ```
 # 黑名单文件
 
-# 前缀匹配
+# 前缀匹配，必须以 "/" 结尾
 billing/faq/
 
 # 精确匹配
