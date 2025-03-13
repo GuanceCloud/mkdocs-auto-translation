@@ -6,6 +6,8 @@ from .translator import DocumentTranslator
 from .metadata import MetadataManager
 from .utils import get_translatable_files, copy_resources, load_blacklist
 from tqdm import tqdm
+import concurrent.futures
+from functools import partial
 
 @click.command()
 @click.option('--source', required=True, type=click.Path(exists=True), help='The source document directory')
@@ -15,9 +17,10 @@ from tqdm import tqdm
 @click.option('--user', help='User name')
 @click.option('--query', help='Query string', default='请翻译。')
 @click.option('--response-mode', help='Response mode', type=click.Choice(['streaming', 'blocking']), default='streaming')
+@click.option('--workers', type=int, default=1, help='Number of parallel workers')
 def translate(source: str, target: str,
              target_language: str, api_key: Optional[str], user: Optional[str], 
-             query: Optional[str], response_mode: str):
+             query: Optional[str], response_mode: str, workers: int):
     """Translate MkDocs documents"""
     # set log module
     logging.basicConfig(
@@ -62,28 +65,53 @@ def translate(source: str, target: str,
     # Copy resource files
     copy_resources(source_path, target_path)
     
-    # Translate files
-    success_count = 0
-    error_count = 0
-    
     # clear last metadata
     last_metadata_manager.clear_metadata()
 
-    for source_file in tqdm(files_to_translate, desc="Translation progress"):
+    def process_file(source_file, translator, target_path, source_path, metadata_manager, last_metadata_manager):
         relative_path = source_file.relative_to(source_path)
         if not metadata_manager.needs_translation(relative_path):
-            continue
+            return None
 
         target_file = target_path / relative_path
-        
         success, translated_metadata = translator.translate_file(source_file, target_file)
         
         if success:
-            success_count += 1
             metadata_manager.update_file_status(relative_path, True)
             last_metadata_manager.update_file_status(relative_path, True, translated_metadata)
-        else:
-            error_count += 1
+            return True
+        return False
+
+    # 并行执行翻译
+    success_count = 0
+    error_count = 0
+    
+    logging.info(f"Starting translation with {workers} workers")
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+        # 创建偏函数，固定除文件以外的参数
+        process_func = partial(
+            process_file,
+            translator=translator,
+            target_path=target_path,
+            source_path=source_path,
+            metadata_manager=metadata_manager,
+            last_metadata_manager=last_metadata_manager
+        )
+        
+        # 使用 tqdm 显示进度
+        futures = list(tqdm(
+            executor.map(process_func, files_to_translate),
+            total=len(files_to_translate),
+            desc="Translation progress"
+        ))
+        
+        # 统计结果
+        for result in futures:
+            if result is True:
+                success_count += 1
+            elif result is False:
+                error_count += 1
     
     # Print summary
     click.echo(f"\nTranslation completed!")
