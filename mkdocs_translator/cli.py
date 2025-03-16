@@ -59,6 +59,9 @@ def translate(source: str, target: str,
     files_to_translate = [f for f in get_translatable_files(source_path) 
                          if not is_blacklisted(str(f.relative_to(source_path)), blacklist)]
 
+    # get files to translate that are not translated
+    files_to_translate_exclude_translated = [f for f in files_to_translate if metadata_manager.needs_translation(f.relative_to(source_path))]
+
     # Create target directory
     target_path.mkdir(parents=True, exist_ok=True)
     
@@ -70,8 +73,8 @@ def translate(source: str, target: str,
 
     def process_file(source_file, translator, target_path, source_path, metadata_manager, last_metadata_manager):
         relative_path = source_file.relative_to(source_path)
-        if not metadata_manager.needs_translation(relative_path):
-            return None
+        # if not metadata_manager.needs_translation(relative_path):
+        #     return None
 
         target_file = target_path / relative_path
         success, translated_metadata = translator.translate_file(source_file, target_file)
@@ -101,8 +104,8 @@ def translate(source: str, target: str,
         
         # 使用 tqdm 显示进度
         futures = list(tqdm(
-            executor.map(process_func, files_to_translate),
-            total=len(files_to_translate),
+            executor.map(process_func, files_to_translate_exclude_translated),
+            total=len(files_to_translate_exclude_translated),
             desc="Translation progress"
         ))
         
