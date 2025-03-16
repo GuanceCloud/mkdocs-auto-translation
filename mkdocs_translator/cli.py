@@ -71,13 +71,19 @@ def translate(source: str, target: str,
     # clear last metadata
     last_metadata_manager.clear_metadata()
 
-    def process_file(source_file, translator, target_path, source_path, metadata_manager, last_metadata_manager):
+    def process_file(source_file, translator, target_path, source_path, metadata_manager, last_metadata_manager, worker_id):
         relative_path = source_file.relative_to(source_path)
-        # if not metadata_manager.needs_translation(relative_path):
-        #     return None
-
         target_file = target_path / relative_path
-        success, translated_metadata = translator.translate_file(source_file, target_file)
+        
+        # Create position for this worker's progress bar
+        position = worker_id
+        
+        success, translated_metadata = translator.translate_file(
+            source_file, 
+            target_file,
+            position=position,
+            desc=f"Worker {worker_id}: {relative_path}"
+        )
         
         if success:
             metadata_manager.update_file_status(relative_path, True)
@@ -92,7 +98,19 @@ def translate(source: str, target: str,
     logging.info(f"Starting translation with {workers} workers")
     
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
-        # 创建偏函数，固定除文件以外的参数
+        # Create tasks with worker IDs
+        tasks = [(file, i % workers) for i, file in enumerate(files_to_translate_exclude_translated)]
+        
+        # print(tasks)
+        # Create main progress bar for overall progress
+        main_pbar = tqdm(
+            total=len(files_to_translate_exclude_translated),
+            desc="Total progress",
+            position=workers,  # Position below all worker progress bars
+            unit="files"
+        )
+        
+        # Create partial function without worker_id
         process_func = partial(
             process_file,
             translator=translator,
@@ -102,19 +120,22 @@ def translate(source: str, target: str,
             last_metadata_manager=last_metadata_manager
         )
         
-        # 使用 tqdm 显示进度
-        futures = list(tqdm(
-            executor.map(process_func, files_to_translate_exclude_translated),
-            total=len(files_to_translate_exclude_translated),
-            desc="Translation progress"
-        ))
+        futures = []
+        for file, worker_id in tasks:
+            # Add worker_id when submitting the task
+            future = executor.submit(process_func, source_file=file, worker_id=worker_id)
+            futures.append(future)
         
-        # 统计结果
-        for result in futures:
+        # Monitor completion
+        for future in concurrent.futures.as_completed(futures):
+            result = future.result()
             if result is True:
                 success_count += 1
             elif result is False:
                 error_count += 1
+            main_pbar.update(1)
+        
+        main_pbar.close()
     
     # Print summary
     click.echo(f"\nTranslation completed!")

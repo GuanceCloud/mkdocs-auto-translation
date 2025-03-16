@@ -37,20 +37,52 @@ class DocumentTranslator:
             "Content-Type": "application/json"
         }
         
+        self.progress_bars = {}
+        self.active_positions = set()  # Track active worker positions
+        self.current_tasks = {}  # Track current task for each worker
+        self.max_workers = None  # Store the maximum number of workers
         
-    def translate_text(self, text: str) -> Tuple[str, Dict]:
+    def _create_progress_bar(self, position: int, desc: str) -> tqdm:
+        """Create a new progress bar with fixed position"""
+        # Add position to active positions
+        self.active_positions.add(position)
+        
+        if position not in self.progress_bars:
+            # Use the position directly instead of calculating it
+            self.progress_bars[position] = tqdm(
+                desc=desc,
+                unit=" chunks",
+                position=position,  # Use absolute position
+                leave=True,
+                dynamic_ncols=True
+            )
+        
+        pbar = self.progress_bars[position]
+        pbar.reset()  # Reset counter
+        pbar.set_description(desc)  # Update description
+        
+        # Record current task
+        self.current_tasks[position] = desc
+        
+        return pbar
+
+    def translate_text(self, text: str, position: int = 0, desc: str = "Translating") -> Tuple[str, Dict]:
         """
         Translate text using the Dify AI API
         
         Args:
             text: The text to translate
+            position: The position for the progress bar
+            desc: Description for the progress bar
             
         Returns:
-            The translated text
+            The translated text and metadata
         """
         try:
             full_translation = []
             conversation_id = ""
+            start_time = datetime.now()
+            
             # Initialize cumulative usage
             cumulative_usage = {
                 "prompt_tokens": 0,
@@ -61,6 +93,12 @@ class DocumentTranslator:
                 "total_price": 0.0,
                 "currency": "USD"
             }
+            
+            chunk_count = 0
+            
+            # Ensure we're using the correct progress bar for this worker
+            pbar = self._create_progress_bar(position, desc)
+            current_task = desc  # Store the current task description
             
             while True:
                 payload = {
@@ -86,9 +124,6 @@ class DocumentTranslator:
                 
                 current_translation = []
                 reached_token_limit = False
-                
-                # Create a progress bar
-                pbar = tqdm(desc="Translating", unit=" chunks")
                 
                 if self.response_mode == "streaming":
                     for line in response.iter_lines(decode_unicode=True):
@@ -129,9 +164,15 @@ class DocumentTranslator:
                             if "answer" in data:
                                 chunk = data["answer"]
                                 current_translation.append(chunk)
-                                if "metadata" in data:
-                                    metadata = data["metadata"]
-                                pbar.update(1)
+                                chunk_count += 1
+                                elapsed = (datetime.now() - start_time).total_seconds()
+                                chunks_per_second = chunk_count / elapsed if elapsed > 0 else 0
+                                
+                                # Only update if this is still the current task for this worker
+                                if position in self.progress_bars and self.current_tasks.get(position) == current_task:
+                                    status = f"{desc} | {chunk_count} chunks | {chunks_per_second:.1f} chunks/s | {elapsed:.1f}s"
+                                    self.progress_bars[position].set_description(status)
+                                    self.progress_bars[position].update(1)
                             elif "error" in data:
                                 raise TranslationError(f"API error: {data['error']}")
                         except json.JSONDecodeError:
@@ -155,8 +196,6 @@ class DocumentTranslator:
                         pbar.update(1)
                     elif "error" in data:
                         raise TranslationError(f"API error: {data['error']}")
-                
-                pbar.close()
                 
                 # merge current translation result, handle possible overlap
                 current_text = "".join(current_translation)
@@ -184,18 +223,28 @@ class DocumentTranslator:
                     
                 # print("\nReached token limit, continuing translation...")
             
+            # Update final status only if this is still the current task for this worker
+            if position in self.progress_bars and self.current_tasks.get(position) == current_task:
+                final_status = f"{desc} [Done] | {chunk_count} chunks | {elapsed:.1f}s"
+                self.progress_bars[position].set_description(final_status)
+                self.progress_bars[position].refresh()
+            
             return "".join(full_translation), last_metadata
                 
         except Exception as e:
+            if position in self.progress_bars:
+                self.progress_bars[position].clear()
             raise TranslationError(f"Translation failed: {str(e)}")
 
-    def translate_file(self, source_path: Path, target_path: Path) -> Tuple[bool, Dict]:
+    def translate_file(self, source_path: Path, target_path: Path, position: int = 0, desc: str = "Translating") -> Tuple[bool, Dict]:
         """
         Translate a single file
         
         Args:
             source_path: The source file path
             target_path: The target file path
+            position: The position for the progress bar
+            desc: Description for the progress bar
             
         Returns:
             Tuple[bool, Dict]: Whether the translation is successful and the metadata of the file
@@ -204,7 +253,11 @@ class DocumentTranslator:
             with open(source_path, 'r', encoding='utf-8') as f:
                 content = f.read()
                 
-            translated_content, translated_metadata = self.translate_text(content)
+            translated_content, translated_metadata = self.translate_text(
+                content,
+                position=position,
+                desc=f"Worker {position}: {source_path.name}"  # Update description with worker ID and filename
+            )
             
             target_path.parent.mkdir(parents=True, exist_ok=True)
             with open(target_path, 'w', encoding='utf-8') as f:
@@ -215,6 +268,11 @@ class DocumentTranslator:
             print(f"Error translating {source_path}: {str(e)}")
             return False, None
 
+    def __del__(self):
+        """Clean up all progress bars"""
+        for pbar in self.progress_bars.values():
+            pbar.clear()
+            pbar.close()
 
 class TranslationError(Exception):
     """Error during translation"""
