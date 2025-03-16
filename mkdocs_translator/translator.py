@@ -264,7 +264,7 @@ class DocumentTranslator:
             translated_content, translated_metadata = self.translate_text(
                 content,
                 position=position,
-                desc=f"Worker {position}: {source_path.name}"  # Update description with worker ID and filename
+                desc=f"Worker {position + 1}: {source_path.name}"  # Update description with worker ID and filename
             )
             
             target_path.parent.mkdir(parents=True, exist_ok=True)

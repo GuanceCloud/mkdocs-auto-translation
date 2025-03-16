@@ -82,7 +82,7 @@ def translate(source: str, target: str,
             source_file, 
             target_file,
             position=position,
-            desc=f"Worker {worker_id}: {relative_path}"
+            desc=f"Worker {worker_id + 1}: {relative_path}"
         )
         
         if success:
