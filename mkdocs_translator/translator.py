@@ -54,7 +54,8 @@ class DocumentTranslator:
                 unit=" chunks",
                 position=position,  # Use absolute position
                 leave=True,
-                dynamic_ncols=True
+                dynamic_ncols=True,
+                bar_format='{desc}'  # Only show description, no default stats
             )
         
         pbar = self.progress_bars[position]
@@ -170,7 +171,7 @@ class DocumentTranslator:
                                 
                                 # Only update if this is still the current task for this worker
                                 if position in self.progress_bars and self.current_tasks.get(position) == current_task:
-                                    status = f"{desc} | {chunk_count} chunks | {chunks_per_second:.1f} chunks/s | {elapsed:.1f}s"
+                                    status = f"{desc} [{chunk_count} chunks, {chunks_per_second:.1f} chunks/s, {elapsed:.1f}s]"
                                     self.progress_bars[position].set_description(status)
                                     self.progress_bars[position].update(1)
                             elif "error" in data:
@@ -225,7 +226,7 @@ class DocumentTranslator:
             
             # Update final status only if this is still the current task for this worker
             if position in self.progress_bars and self.current_tasks.get(position) == current_task:
-                final_status = f"{desc} [Done] | {chunk_count} chunks | {elapsed:.1f}s"
+                final_status = f"{desc} [Done in {elapsed:.1f}s, {chunk_count} chunks]"
                 self.progress_bars[position].set_description(final_status)
                 self.progress_bars[position].refresh()
             
