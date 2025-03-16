@@ -244,7 +244,8 @@ class DocumentTranslator:
                 self.progress_bars[position].clear()
             raise TranslationError(f"Translation failed: {str(e)}")
 
-    def translate_file(self, source_path: Path, target_path: Path, position: int = 0, desc: str = "Translating") -> Tuple[bool, Dict]:
+    def translate_file(self, source_path: Path, target_path: Path, position: int = 0, 
+                      desc: str = "Translating", current_file: int = 1, total_files: int = 1) -> Tuple[bool, Dict]:
         """
         Translate a single file
         
@@ -253,6 +254,8 @@ class DocumentTranslator:
             target_path: The target file path
             position: The position for the progress bar
             desc: Description for the progress bar
+            current_file: The current file number
+            total_files: The total number of files
             
         Returns:
             Tuple[bool, Dict]: Whether the translation is successful and the metadata of the file
@@ -260,11 +263,14 @@ class DocumentTranslator:
         try:
             with open(source_path, 'r', encoding='utf-8') as f:
                 content = f.read()
-                
+            
+            # Update desc to include file progress
+            desc = f"{desc} ({current_file}/{total_files})"
+            
             translated_content, translated_metadata = self.translate_text(
                 content,
                 position=position,
-                desc=f"Worker {position + 1}: {source_path.name}"  # Update description with worker ID and filename
+                desc=desc
             )
             
             target_path.parent.mkdir(parents=True, exist_ok=True)

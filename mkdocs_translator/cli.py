@@ -71,18 +71,22 @@ def translate(source: str, target: str,
     # clear last metadata
     last_metadata_manager.clear_metadata()
 
-    def process_file(source_file, translator, target_path, source_path, metadata_manager, last_metadata_manager, worker_id):
+    def process_file(source_file, translator, target_path, source_path, metadata_manager, 
+                    last_metadata_manager, worker_id, worker_tasks_count):
         relative_path = source_file.relative_to(source_path)
         target_file = target_path / relative_path
         
-        # Create position for this worker's progress bar
-        position = worker_id
+        # Get total files for this worker and calculate current file number
+        total_files = len(worker_tasks_count[worker_id])
+        current_file_num = worker_tasks_count[worker_id].index(source_file) + 1
         
         success, translated_metadata = translator.translate_file(
             source_file, 
             target_file,
-            position=position,
-            desc=f"Worker {worker_id + 1}: {relative_path}"
+            position=worker_id,
+            desc=f"Worker {worker_id + 1}: {relative_path}",
+            current_file=current_file_num,
+            total_files=total_files
         )
         
         if success:
@@ -106,28 +110,34 @@ def translate(source: str, target: str,
         # Create tasks with worker IDs
         tasks = [(file, i % workers) for i, file in enumerate(files_to_translate_exclude_translated)]
         
-        # print(tasks)
+        # Group tasks by worker
+        worker_tasks = {}
+        for file, worker_id in tasks:
+            if worker_id not in worker_tasks:
+                worker_tasks[worker_id] = []
+            worker_tasks[worker_id].append(file)
+        
         # Create main progress bar for overall progress
         main_pbar = tqdm(
             total=len(files_to_translate_exclude_translated),
             desc="Total progress",
-            position=workers,  # Position below all worker progress bars
+            position=workers,
             unit="files"
         )
         
-        # Create partial function without worker_id
+        # Create partial function with worker task counts
         process_func = partial(
             process_file,
             translator=translator,
             target_path=target_path,
             source_path=source_path,
             metadata_manager=metadata_manager,
-            last_metadata_manager=last_metadata_manager
+            last_metadata_manager=last_metadata_manager,
+            worker_tasks_count=worker_tasks  # Pass the worker tasks information
         )
         
         futures = []
         for file, worker_id in tasks:
-            # Add worker_id when submitting the task
             future = executor.submit(process_func, source_file=file, worker_id=worker_id)
             futures.append(future)
         
@@ -142,8 +152,10 @@ def translate(source: str, target: str,
         
         main_pbar.close()
     
-    # Print summary
-    click.echo(f"\nTranslation completed!")
+    summary_position = workers + 1
+    
+    click.echo('\n' * summary_position)
+    click.echo(f"Translation completed!")
     click.echo(f"Success: {success_count} files")
     click.echo(f"Failed: {error_count} files")
 
