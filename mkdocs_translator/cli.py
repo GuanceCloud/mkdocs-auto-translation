@@ -86,8 +86,13 @@ def translate(source: str, target: str,
         )
         
         if success:
-            metadata_manager.update_file_status(relative_path, True)
-            last_metadata_manager.update_file_status(relative_path, True, translated_metadata)
+            # Update both metadata files with translation time
+            if translated_metadata and 'translation_time' in translated_metadata:
+                metadata_manager.update_file_status(relative_path, True, {'translation_time': translated_metadata['translation_time']})
+                last_metadata_manager.update_file_status(relative_path, True, translated_metadata)
+            else:
+                metadata_manager.update_file_status(relative_path, True)
+                last_metadata_manager.update_file_status(relative_path, True, translated_metadata)
             return True
         return False
 

@@ -80,10 +80,11 @@ class MetadataManager:
             file_key = str(file_path)
             self.metadata[file_key] = {
                 'hash': self.get_file_hash(file_path),
-                'last_translated': datetime.now().isoformat()
+                'last_translated': datetime.now().isoformat(),
+                'translation_time': translated_metadata.get('translation_time', 0)
             }
 
-            if translated_metadata:
+            if translated_metadata and translated_metadata.get('usage') != None:
                 self.metadata[file_key]['usage'] = translated_metadata.get('usage', {})
                 # self.metadata[file_key]['request_id'] = last_file_metadata.get('request_id')
 

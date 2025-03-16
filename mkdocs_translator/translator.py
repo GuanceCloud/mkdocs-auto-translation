@@ -224,11 +224,18 @@ class DocumentTranslator:
                     
                 # print("\nReached token limit, continuing translation...")
             
+            # Calculate total translation time
+            total_time = (datetime.now() - start_time).total_seconds()
+            
             # Update final status only if this is still the current task for this worker
             if position in self.progress_bars and self.current_tasks.get(position) == current_task:
-                final_status = f"{desc} [Done in {elapsed:.1f}s, {chunk_count} chunks]"
+                final_status = f"{desc} [Done in {total_time:.1f}s, {chunk_count} chunks]"
                 self.progress_bars[position].set_description(final_status)
                 self.progress_bars[position].refresh()
+            
+            # Add translation time to metadata
+            if last_metadata:
+                last_metadata['translation_time'] = round(total_time, 2)  # Round to 2 decimal places
             
             return "".join(full_translation), last_metadata
                 
