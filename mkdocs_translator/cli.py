@@ -150,14 +150,13 @@ def translate(source: str, target: str,
                 error_count += 1
             main_pbar.update(1)
         
+        main_pbar.clear()
         main_pbar.close()
-    
-    summary_position = workers + 1
-    
-    click.echo('\n' * summary_position)
-    click.echo(f"Translation completed!")
-    click.echo(f"Success: {success_count} files")
-    click.echo(f"Failed: {error_count} files")
+        
+        click.echo('\n' * (workers + 1))
+        click.echo(f"Translation completed!")
+        click.echo(f"Success: {success_count} files")
+        click.echo(f"Failed: {error_count} files")
 
 if __name__ == '__main__':
     translate() 
