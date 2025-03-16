@@ -119,6 +119,7 @@ class DocumentTranslator:
                                         if usage.get("completion_tokens") >= 8192:
                                             reached_token_limit = True
                                             conversation_id = data.get("conversation_id", "")
+                                            cumulative_usage["exceed_token_limit"] = True
 
                                             print("data: ", line)
                                             print(f"Reached token limit: {usage.get('completion_tokens')} tokens, conversation_id: {conversation_id}")
