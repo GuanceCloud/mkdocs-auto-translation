@@ -8,6 +8,7 @@ from .utils import get_translatable_files, copy_resources, load_blacklist
 from tqdm import tqdm
 import concurrent.futures
 from functools import partial
+from fnmatch import fnmatch
 
 @click.command()
 @click.option('--source', required=True, type=click.Path(exists=True), help='The source document directory')
@@ -43,16 +44,25 @@ def translate(source: str, target: str,
     last_metadata_manager = MetadataManager(last_metadata_path, source_path)
     
     def is_blacklisted(file_path: str, blacklist: set) -> bool:
-        """Check if a file path matches any blacklist pattern"""
-
-        # Check exact match
+        """
+        Check if a file path matches any blacklist pattern.
+        Supports:
+        - Exact path match (e.g. "1.md")
+        - Directory prefix match (e.g. "datakit/")
+        - Wildcards: * (multiple chars), ? (single char)
+        """
         if file_path in blacklist:
             return True
-        # Check directory prefix match
-        return any(
-            (pattern.endswith('/') and file_path.startswith(pattern)) 
-            for pattern in blacklist
-        )
+            
+        for pattern in blacklist:
+            if pattern.endswith('/') and file_path.startswith(pattern):
+                return True
+
+            if '*' in pattern or '?' in pattern:
+                if fnmatch(file_path, pattern):
+                    return True
+                
+        return False
     
     # Get files to translate
     files_to_translate = [f for f in get_translatable_files(source_path) 

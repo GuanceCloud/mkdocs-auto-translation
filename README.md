@@ -62,11 +62,17 @@ python -m mkdocs_translator.cli \
 ```
 # 黑名单文件
 
-# 前缀匹配，必须以 "/" 结尾
-billing/faq/
+# 目录前缀匹配
+datakit/
+integrations/
 
 # 精确匹配
-billing/commercial-version.md
+billing/commericial-version.md
+
+# 通配符匹配
+billing/commericial-*.md
+billing/v?/*.md
+test-*.md
 ``` 
 
 ## 注意事项
