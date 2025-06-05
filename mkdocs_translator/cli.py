@@ -34,9 +34,8 @@ def translate(source: str, target: str,
     metadata_path = source_path / 'metadata.json'
     last_metadata_path = source_path / 'last-metadata.json'
     blacklist_file = source_path / '.translate-blacklist'
-
     # Load blacklist
-    blacklist = load_blacklist(source_path / blacklist_file)
+    blacklist = load_blacklist(blacklist_file)
     
     # Initialize components
     translator = DocumentTranslator(target_language, user=user, query=query, response_mode=response_mode, api_key=api_key)
