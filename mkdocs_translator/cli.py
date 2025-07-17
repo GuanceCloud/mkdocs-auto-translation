@@ -19,9 +19,12 @@ from fnmatch import fnmatch
 @click.option('--query', help='Query string', default='请翻译。')
 @click.option('--response-mode', help='Response mode', type=click.Choice(['streaming', 'blocking']), default='streaming')
 @click.option('--workers', type=int, default=1, help='Number of parallel workers')
+@click.option('--overwrite-resources', is_flag=True, default=False, help='Whether to overwrite resource files in target directory')
+@click.option('--delete-removed-resources', is_flag=True, default=False, help='Whether to delete resource files in target directory that no longer exist in source directory')
 def translate(source: str, target: str,
              target_language: str, api_key: Optional[str], user: Optional[str], 
-             query: Optional[str], response_mode: str, workers: int):
+             query: Optional[str], response_mode: str, workers: int,
+             overwrite_resources: bool, delete_removed_resources: bool):
     """Translate MkDocs documents"""
     # set log module
     logging.basicConfig(
@@ -75,7 +78,7 @@ def translate(source: str, target: str,
     target_path.mkdir(parents=True, exist_ok=True)
     
     # Copy resource files
-    copy_resources(source_path, target_path)
+    copy_resources(source_path, target_path, overwrite_resources=overwrite_resources, delete_removed_resources=delete_removed_resources)
     
     # clear last metadata
     last_metadata_manager.clear_metadata()

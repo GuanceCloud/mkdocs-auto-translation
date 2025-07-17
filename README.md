@@ -40,6 +40,9 @@ python -m mkdocs_translator.cli \
 --target /path/to/target \
 --target-language "英语" \
 --user "your-username"
+--workers 10
+--overwrite-resources
+--delete-removed-resources
 ```
 
 或者在参数中指定 Dify API Key：
@@ -50,6 +53,9 @@ python -m mkdocs_translator.cli \
 --target /path/to/target \
 --target-language "英语" \
 --user "your-username" \
+--workers 10
+--overwrite-resources
+--delete-removed-resources
 --api-key "your-dify-api-key"
 ```
 
