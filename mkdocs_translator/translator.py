@@ -7,6 +7,7 @@ from tqdm import tqdm
 import hashlib
 from datetime import datetime
 import logging  # 保留导入，因为还需要使用 logging.info()
+import re  # 添加re模块用于正则表达式匹配中文字符
 
 class DocumentTranslator:
     """The main class for handling document translation."""
@@ -41,6 +42,20 @@ class DocumentTranslator:
         self.active_positions = set()  # Track active worker positions
         self.current_tasks = {}  # Track current task for each worker
         self.max_workers = None  # Store the maximum number of workers
+        
+    def _contains_chinese(self, text: str) -> bool:
+        """
+        检查文本是否包含中文字符
+        
+        Args:
+            text: 要检查的文本
+            
+        Returns:
+            bool: 如果包含中文字符返回True，否则返回False
+        """
+        # 使用正则表达式匹配中文字符（包括中文标点符号）
+        chinese_pattern = re.compile(r'[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]')
+        return bool(chinese_pattern.search(text))
         
     def _create_progress_bar(self, position: int, desc: str) -> tqdm:
         """Create a new progress bar with fixed position"""
@@ -164,6 +179,10 @@ class DocumentTranslator:
                                 
                             if "answer" in data:
                                 chunk = data["answer"]
+                                # 检查翻译结果是否包含中文字符
+                                if self._contains_chinese(chunk):
+                                    raise TranslationError(f"翻译结果包含中文字符，翻译失败。检测到的中文字符内容: {chunk[:100]}...")
+                                
                                 current_translation.append(chunk)
                                 chunk_count += 1
                                 elapsed = (datetime.now() - start_time).total_seconds()
@@ -182,7 +201,12 @@ class DocumentTranslator:
                     # Process blocking mode responses
                     data = response.json()
                     if "answer" in data:
-                        current_translation.append(data["answer"])
+                        answer = data["answer"]
+                        # 检查翻译结果是否包含中文字符
+                        if self._contains_chinese(answer):
+                            raise TranslationError(f"翻译结果包含中文字符，翻译失败。检测到的中文字符内容: {answer[:100]}...")
+                        
+                        current_translation.append(answer)
                         if "metadata" in data:
                             metadata = data["metadata"]
                             if "usage" in metadata:
@@ -224,6 +248,11 @@ class DocumentTranslator:
                     
                 # print("\nReached token limit, continuing translation...")
             
+            # 最终检查完整的翻译结果是否包含中文字符
+            final_translation = "".join(full_translation)
+            if self._contains_chinese(final_translation):
+                raise TranslationError(f"最终翻译结果包含中文字符，翻译失败。检测到的中文字符内容: {final_translation[:200]}...")
+            
             # Calculate total translation time
             total_time = (datetime.now() - start_time).total_seconds()
             
@@ -237,7 +266,7 @@ class DocumentTranslator:
             if last_metadata:
                 last_metadata['translation_time'] = round(total_time, 2)  # Round to 2 decimal places
             
-            return "".join(full_translation), last_metadata
+            return final_translation, last_metadata
                 
         except Exception as e:
             if position in self.progress_bars:
@@ -280,7 +309,9 @@ class DocumentTranslator:
             return True, translated_metadata
         except Exception as e:
             print(f"Error translating {source_path}: {str(e)}")
-            return False, None
+            # 返回包含错误信息的metadata
+            error_metadata = {'error_message': str(e)}
+            return False, error_metadata
 
     def __del__(self):
         """Clean up all progress bars"""

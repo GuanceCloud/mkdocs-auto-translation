@@ -64,8 +64,18 @@ class MetadataManager:
         
         if file_key not in self.metadata:
             return True
+        
+        file_metadata = self.metadata[file_key]
+        
+        # 如果文件hash不匹配，需要翻译
+        if file_metadata['hash'] != current_hash:
+            return True
+        
+        # 如果文件状态为failed，也需要重新翻译
+        if file_metadata.get('status') == 'failed':
+            return True
             
-        return self.metadata[file_key]['hash'] != current_hash
+        return False
         
     def update_file_status(self, file_path: Path, success: bool, translated_metadata: Dict = None):
         """
@@ -76,16 +86,26 @@ class MetadataManager:
             success: Whether the translation is successful
             translated_metadata: The metadata of the file
         """
+        file_key = str(file_path)
+        
         if success:
-            file_key = str(file_path)
             self.metadata[file_key] = {
                 'hash': self.get_file_hash(file_path),
                 'last_translated': datetime.now().isoformat(),
-                'translation_time': translated_metadata.get('translation_time', 0)
+                'translation_time': translated_metadata.get('translation_time', 0) if translated_metadata else 0,
+                'status': 'success'
             }
 
             if translated_metadata and translated_metadata.get('usage') != None:
                 self.metadata[file_key]['usage'] = translated_metadata.get('usage', {})
                 # self.metadata[file_key]['request_id'] = last_file_metadata.get('request_id')
+        else:
+            # 记录翻译失败的情况
+            self.metadata[file_key] = {
+                'hash': self.get_file_hash(file_path),
+                'last_translated': datetime.now().isoformat(),
+                'status': 'failed',
+                'error_message': translated_metadata.get('error_message', 'Unknown error') if translated_metadata else 'Unknown error'
+            }
 
-            self.save_metadata() 
+        self.save_metadata() 

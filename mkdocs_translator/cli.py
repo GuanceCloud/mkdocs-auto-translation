@@ -92,25 +92,43 @@ def translate(source: str, target: str,
         total_files = len(worker_tasks_count[worker_id])
         current_file_num = worker_tasks_count[worker_id].index(source_file) + 1
         
-        success, translated_metadata = translator.translate_file(
-            source_file, 
-            target_file,
-            position=worker_id,
-            desc=f"Worker {worker_id + 1}: {relative_path}",
-            current_file=current_file_num,
-            total_files=total_files
-        )
-        
-        if success:
-            # Update both metadata files with translation time
-            if translated_metadata and 'translation_time' in translated_metadata:
-                metadata_manager.update_file_status(relative_path, True, {'translation_time': translated_metadata['translation_time']})
-                last_metadata_manager.update_file_status(relative_path, True, translated_metadata)
+        try:
+            success, translated_metadata = translator.translate_file(
+                source_file, 
+                target_file,
+                position=worker_id,
+                desc=f"Worker {worker_id + 1}: {relative_path}",
+                current_file=current_file_num,
+                total_files=total_files
+            )
+            
+            if success:
+                # Update both metadata files with translation time
+                if translated_metadata and 'translation_time' in translated_metadata:
+                    metadata_manager.update_file_status(relative_path, True, {'translation_time': translated_metadata['translation_time']})
+                    last_metadata_manager.update_file_status(relative_path, True, translated_metadata)
+                else:
+                    metadata_manager.update_file_status(relative_path, True)
+                    last_metadata_manager.update_file_status(relative_path, True, translated_metadata)
+                return True
             else:
-                metadata_manager.update_file_status(relative_path, True)
-                last_metadata_manager.update_file_status(relative_path, True, translated_metadata)
-            return True
-        return False
+                # 翻译失败但没有异常
+                error_metadata = {'error_message': 'Translation failed without specific error'}
+                metadata_manager.update_file_status(relative_path, False, error_metadata)
+                last_metadata_manager.update_file_status(relative_path, False, error_metadata)
+                return False
+                
+        except Exception as e:
+            # 捕获翻译过程中的异常
+            error_message = str(e)
+            print(f"翻译文件 {relative_path} 时发生错误: {error_message}")
+            
+            # 记录失败情况到两个metadata文件中
+            error_metadata = {'error_message': error_message}
+            metadata_manager.update_file_status(relative_path, False, error_metadata)
+            last_metadata_manager.update_file_status(relative_path, False, error_metadata)
+            
+            return False
 
     # 并行执行翻译
     success_count = 0
