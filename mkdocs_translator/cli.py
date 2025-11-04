@@ -107,20 +107,24 @@ def translate(source: str, target: str,
                 if translated_metadata and 'translation_time' in translated_metadata:
                     metadata_manager.update_file_status(relative_path, True, {'translation_time': translated_metadata['translation_time']})
                     last_metadata_manager.update_file_status(relative_path, True, translated_metadata)
+                    logging.info(f"文件翻译成功并更新metadata - {relative_path} - 翻译时间: {translated_metadata['translation_time']}s")
                 else:
                     metadata_manager.update_file_status(relative_path, True)
                     last_metadata_manager.update_file_status(relative_path, True, translated_metadata)
+                    logging.info(f"文件翻译成功并更新metadata - {relative_path}")
                 return True
             else:
                 # 翻译失败但没有异常
                 error_metadata = {'error_message': 'Translation failed without specific error'}
                 metadata_manager.update_file_status(relative_path, False, error_metadata)
                 last_metadata_manager.update_file_status(relative_path, False, error_metadata)
+                logging.error(f"文件翻译失败（无具体错误） - {relative_path}")
                 return False
                 
         except Exception as e:
             # 捕获翻译过程中的异常
             error_message = str(e)
+            logging.error(f"翻译文件 {relative_path} 时发生异常: {error_message}")
             print(f"翻译文件 {relative_path} 时发生错误: {error_message}")
             
             # 记录失败情况到两个metadata文件中
@@ -134,7 +138,8 @@ def translate(source: str, target: str,
     success_count = 0
     error_count = 0
     
-    logging.info(f"Starting translation with {workers} workers")
+    logging.info(f"开始翻译任务 - 源目录: {source_path} - 目标目录: {target_path} - 工作线程数: {workers}")
+    logging.info(f"需要翻译的文件数量: {len(files_to_translate_exclude_translated)}")
     
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
         # Create tasks with worker IDs
@@ -176,12 +181,17 @@ def translate(source: str, target: str,
             result = future.result()
             if result is True:
                 success_count += 1
+                logging.info(f"翻译进度: {success_count}/{len(files_to_translate_exclude_translated)} 成功")
             elif result is False:
                 error_count += 1
+                logging.error(f"翻译进度: {error_count}/{len(files_to_translate_exclude_translated)} 失败")
             main_pbar.update(1)
         
         main_pbar.clear()
         main_pbar.close()
+        
+        # 记录翻译任务完成
+        logging.info(f"翻译任务完成 - 成功: {success_count} 文件 - 失败: {error_count} 文件")
         
         click.echo('\n' * (workers + 1))
         click.echo(f"Translation completed!")

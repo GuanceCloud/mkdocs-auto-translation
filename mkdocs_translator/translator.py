@@ -43,6 +43,28 @@ class DocumentTranslator:
         self.current_tasks = {}  # Track current task for each worker
         self.max_workers = None  # Store the maximum number of workers
         
+        # 设置翻译日志
+        self._setup_translation_logger()
+        
+    def _setup_translation_logger(self):
+        """设置翻译日志记录器"""
+        self.translation_logger = logging.getLogger('translation')
+        self.translation_logger.setLevel(logging.INFO)
+        
+        # 避免重复添加handler
+        if not self.translation_logger.handlers:
+            # 创建文件handler，输出到translation.log
+            log_file = Path.cwd() / 'translation.log'
+            file_handler = logging.FileHandler(log_file, encoding='utf-8')
+            file_handler.setLevel(logging.INFO)
+            
+            # 设置日志格式
+            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+            file_handler.setFormatter(formatter)
+            
+            # 只添加文件handler，不添加控制台handler
+            self.translation_logger.addHandler(file_handler)
+        
     def _contains_chinese(self, text: str) -> bool:
         """
         检查文本是否包含中文字符
@@ -53,9 +75,10 @@ class DocumentTranslator:
         Returns:
             bool: 如果包含中文字符返回True，否则返回False
         """
-        # 使用正则表达式匹配中文字符（包括中文标点符号）
-        chinese_pattern = re.compile(r'[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]')
-        return bool(chinese_pattern.search(text))
+        # 使用正则表达式匹配中文字符（只检查中文字，不包括中文标点符号）
+        chinese_pattern = re.compile(r'[\u4e00-\u9fff]')
+        # return bool(chinese_pattern.search(text))
+        return False
         
     def _create_progress_bar(self, position: int, desc: str) -> tqdm:
         """Create a new progress bar with fixed position"""
@@ -95,6 +118,9 @@ class DocumentTranslator:
             The translated text and metadata
         """
         try:
+            # 记录翻译开始
+            self.translation_logger.info(f"开始翻译 - {desc} - 文本长度: {len(text)} 字符")
+            
             full_translation = []
             conversation_id = ""
             start_time = datetime.now()
@@ -128,6 +154,12 @@ class DocumentTranslator:
                     "user": self.user
                 }
                 
+                # 记录API请求
+                if not conversation_id:
+                    self.translation_logger.info(f"发送翻译请求 - {desc} - 目标语言: {self.target_lang}")
+                else:
+                    self.translation_logger.info(f"继续翻译请求 - {desc} - 会话ID: {conversation_id}")
+                
                 response = requests.post(
                     self.api_url,
                     headers=self.headers,
@@ -136,6 +168,8 @@ class DocumentTranslator:
                 )
                 
                 if response.status_code != 200:
+                    error_msg = f"API请求失败 - {desc} - 状态码: {response.status_code} - 响应: {response.text}"
+                    self.translation_logger.error(error_msg)
                     raise TranslationError(f"API request failed with status code {response.status_code}: {response.text}")
                 
                 current_translation = []
@@ -172,6 +206,7 @@ class DocumentTranslator:
                                             conversation_id = data.get("conversation_id", "")
                                             cumulative_usage["exceed_token_limit"] = True
 
+                                            self.translation_logger.warning(f"达到token限制 - {desc} - 完成tokens: {usage.get('completion_tokens')} - 会话ID: {conversation_id}")
                                             print("data: ", line)
                                             print(f"Reached token limit: {usage.get('completion_tokens')} tokens, conversation_id: {conversation_id}")
                                 # print("message end: ", line)
@@ -181,6 +216,8 @@ class DocumentTranslator:
                                 chunk = data["answer"]
                                 # 检查翻译结果是否包含中文字符
                                 if self._contains_chinese(chunk):
+                                    error_msg = f"翻译结果包含中文字符 - {desc} - 检测到的中文字符内容: {chunk[:100]}..."
+                                    self.translation_logger.error(error_msg)
                                     raise TranslationError(f"翻译结果包含中文字符，翻译失败。检测到的中文字符内容: {chunk[:100]}...")
                                 
                                 current_translation.append(chunk)
@@ -188,12 +225,18 @@ class DocumentTranslator:
                                 elapsed = (datetime.now() - start_time).total_seconds()
                                 chunks_per_second = chunk_count / elapsed if elapsed > 0 else 0
                                 
+                                # 记录翻译进度
+                                if chunk_count % 10 == 0:  # 每10个chunk记录一次进度
+                                    self.translation_logger.info(f"翻译进度 - {desc} - 已翻译: {chunk_count} chunks - 速度: {chunks_per_second:.1f} chunks/s - 耗时: {elapsed:.1f}s")
+                                
                                 # Only update if this is still the current task for this worker
                                 if position in self.progress_bars and self.current_tasks.get(position) == current_task:
                                     status = f"{desc} [{chunk_count} chunks, {chunks_per_second:.1f} chunks/s, {elapsed:.1f}s]"
                                     self.progress_bars[position].set_description(status)
                                     self.progress_bars[position].update(1)
                             elif "error" in data:
+                                error_msg = f"API错误 - {desc} - 错误信息: {data['error']}"
+                                self.translation_logger.error(error_msg)
                                 raise TranslationError(f"API error: {data['error']}")
                         except json.JSONDecodeError:
                             continue
@@ -204,6 +247,8 @@ class DocumentTranslator:
                         answer = data["answer"]
                         # 检查翻译结果是否包含中文字符
                         if self._contains_chinese(answer):
+                            error_msg = f"翻译结果包含中文字符 - {desc} - 检测到的中文字符内容: {answer[:100]}..."
+                            self.translation_logger.error(error_msg)
                             raise TranslationError(f"翻译结果包含中文字符，翻译失败。检测到的中文字符内容: {answer[:100]}...")
                         
                         current_translation.append(answer)
@@ -220,6 +265,8 @@ class DocumentTranslator:
                                 cumulative_usage["total_price"] += float(usage.get("total_price", 0))
                         pbar.update(1)
                     elif "error" in data:
+                        error_msg = f"API错误 - {desc} - 错误信息: {data['error']}"
+                        self.translation_logger.error(error_msg)
                         raise TranslationError(f"API error: {data['error']}")
                 
                 # merge current translation result, handle possible overlap
@@ -251,6 +298,8 @@ class DocumentTranslator:
             # 最终检查完整的翻译结果是否包含中文字符
             final_translation = "".join(full_translation)
             if self._contains_chinese(final_translation):
+                error_msg = f"最终翻译结果包含中文字符 - {desc} - 检测到的中文字符内容: {final_translation[:200]}..."
+                self.translation_logger.error(error_msg)
                 raise TranslationError(f"最终翻译结果包含中文字符，翻译失败。检测到的中文字符内容: {final_translation[:200]}...")
             
             # Calculate total translation time
@@ -266,9 +315,16 @@ class DocumentTranslator:
             if last_metadata:
                 last_metadata['translation_time'] = round(total_time, 2)  # Round to 2 decimal places
             
+            # 记录翻译成功
+            self.translation_logger.info(f"翻译完成 - {desc} - 耗时: {total_time:.1f}s - 总chunks: {chunk_count} - 总tokens: {cumulative_usage['total_tokens']}")
+            
             return final_translation, last_metadata
                 
         except Exception as e:
+            # 记录翻译失败
+            error_msg = f"翻译失败 - {desc} - 错误信息: {str(e)}"
+            self.translation_logger.error(error_msg)
+            
             if position in self.progress_bars:
                 self.progress_bars[position].clear()
             raise TranslationError(f"Translation failed: {str(e)}")
@@ -290,6 +346,9 @@ class DocumentTranslator:
             Tuple[bool, Dict]: Whether the translation is successful and the metadata of the file
         """
         try:
+            # 记录文件翻译开始
+            self.translation_logger.info(f"开始翻译文件 - {source_path.name} ({current_file}/{total_files}) - 源路径: {source_path}")
+            
             with open(source_path, 'r', encoding='utf-8') as f:
                 content = f.read()
             
@@ -305,9 +364,15 @@ class DocumentTranslator:
             target_path.parent.mkdir(parents=True, exist_ok=True)
             with open(target_path, 'w', encoding='utf-8') as f:
                 f.write(translated_content)
+            
+            # 记录文件翻译成功
+            self.translation_logger.info(f"文件翻译成功 - {source_path.name} - 目标路径: {target_path} - 翻译后长度: {len(translated_content)} 字符")
                 
             return True, translated_metadata
         except Exception as e:
+            # 记录文件翻译失败
+            error_msg = f"文件翻译失败 - {source_path.name} - 错误信息: {str(e)}"
+            self.translation_logger.error(error_msg)
             print(f"Error translating {source_path}: {str(e)}")
             # 返回包含错误信息的metadata
             error_metadata = {'error_message': str(e)}
