@@ -21,10 +21,11 @@ from fnmatch import fnmatch
 @click.option('--workers', type=int, default=1, help='Number of parallel workers')
 @click.option('--overwrite-resources', is_flag=True, default=False, help='Whether to overwrite resource files in target directory')
 @click.option('--delete-removed-resources', is_flag=True, default=False, help='Whether to delete resource files in target directory that no longer exist in source directory')
+@click.option('--check-chinese', is_flag=True, default=False, help='Whether to check if translation results contain Chinese characters')
 def translate(source: str, target: str,
              target_language: str, api_key: Optional[str], user: Optional[str], 
              query: Optional[str], response_mode: str, workers: int,
-             overwrite_resources: bool, delete_removed_resources: bool):
+             overwrite_resources: bool, delete_removed_resources: bool, check_chinese: bool):
     """Translate MkDocs documents"""
     # set log module
     logging.basicConfig(
@@ -42,7 +43,7 @@ def translate(source: str, target: str,
     blacklist = load_blacklist(blacklist_file)
     
     # Initialize components
-    translator = DocumentTranslator(target_language, user=user, query=query, response_mode=response_mode, api_key=api_key)
+    translator = DocumentTranslator(target_language, user=user, query=query, response_mode=response_mode, api_key=api_key, check_chinese=check_chinese)
     metadata_manager = MetadataManager(metadata_path, source_path)
     last_metadata_manager = MetadataManager(last_metadata_path, source_path)
     

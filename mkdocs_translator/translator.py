@@ -12,7 +12,7 @@ import re  # 添加re模块用于正则表达式匹配中文字符
 class DocumentTranslator:
     """The main class for handling document translation."""
     
-    def __init__(self, target_lang: str, user: str, query: str, response_mode: str = "streaming", api_key: Optional[str] = None):
+    def __init__(self, target_lang: str, user: str, query: str, response_mode: str = "streaming", api_key: Optional[str] = None, check_chinese: bool = False):
         """
         Initialize the translator.
         
@@ -22,6 +22,7 @@ class DocumentTranslator:
             query: The query string
             response_mode: The response mode, optional values are "streaming" or "blocking".
             api_key: The Dify AI API key
+            check_chinese: Whether to check if translation results contain Chinese characters
         """
         self.target_lang = target_lang
         self.user = user
@@ -42,6 +43,7 @@ class DocumentTranslator:
         self.active_positions = set()  # Track active worker positions
         self.current_tasks = {}  # Track current task for each worker
         self.max_workers = None  # Store the maximum number of workers
+        self.check_chinese = check_chinese  # Whether to check for Chinese characters in translation results
         
         # 设置翻译日志
         self._setup_translation_logger()
@@ -77,8 +79,7 @@ class DocumentTranslator:
         """
         # 使用正则表达式匹配中文字符（只检查中文字，不包括中文标点符号）
         chinese_pattern = re.compile(r'[\u4e00-\u9fff]')
-        # return bool(chinese_pattern.search(text))
-        return False
+        return bool(chinese_pattern.search(text))
         
     def _create_progress_bar(self, position: int, desc: str) -> tqdm:
         """Create a new progress bar with fixed position"""
@@ -214,8 +215,8 @@ class DocumentTranslator:
                                 
                             if "answer" in data:
                                 chunk = data["answer"]
-                                # 检查翻译结果是否包含中文字符
-                                if self._contains_chinese(chunk):
+                                # 检查翻译结果是否包含中文字符（如果启用了检测）
+                                if self.check_chinese and self._contains_chinese(chunk):
                                     error_msg = f"翻译结果包含中文字符 - {desc} - 检测到的中文字符内容: {chunk[:100]}..."
                                     self.translation_logger.error(error_msg)
                                     raise TranslationError(f"翻译结果包含中文字符，翻译失败。检测到的中文字符内容: {chunk[:100]}...")
@@ -245,8 +246,8 @@ class DocumentTranslator:
                     data = response.json()
                     if "answer" in data:
                         answer = data["answer"]
-                        # 检查翻译结果是否包含中文字符
-                        if self._contains_chinese(answer):
+                        # 检查翻译结果是否包含中文字符（如果启用了检测）
+                        if self.check_chinese and self._contains_chinese(answer):
                             error_msg = f"翻译结果包含中文字符 - {desc} - 检测到的中文字符内容: {answer[:100]}..."
                             self.translation_logger.error(error_msg)
                             raise TranslationError(f"翻译结果包含中文字符，翻译失败。检测到的中文字符内容: {answer[:100]}...")
@@ -295,9 +296,9 @@ class DocumentTranslator:
                     
                 # print("\nReached token limit, continuing translation...")
             
-            # 最终检查完整的翻译结果是否包含中文字符
+            # 最终检查完整的翻译结果是否包含中文字符（如果启用了检测）
             final_translation = "".join(full_translation)
-            if self._contains_chinese(final_translation):
+            if self.check_chinese and self._contains_chinese(final_translation):
                 error_msg = f"最终翻译结果包含中文字符 - {desc} - 检测到的中文字符内容: {final_translation[:200]}..."
                 self.translation_logger.error(error_msg)
                 raise TranslationError(f"最终翻译结果包含中文字符，翻译失败。检测到的中文字符内容: {final_translation[:200]}...")
