@@ -12,7 +12,7 @@ import re  # 添加re模块用于正则表达式匹配中文字符
 class DocumentTranslator:
     """The main class for handling document translation."""
     
-    def __init__(self, target_lang: str, user: str, query: str, response_mode: str = "streaming", api_key: Optional[str] = None, check_chinese: bool = False):
+    def __init__(self, target_lang: str, user: str, query: str, response_mode: str = "streaming", api_key: Optional[str] = None, check_chinese: bool = False, check_line_count: bool = False):
         """
         Initialize the translator.
         
@@ -23,6 +23,7 @@ class DocumentTranslator:
             response_mode: The response mode, optional values are "streaming" or "blocking".
             api_key: The Dify AI API key
             check_chinese: Whether to check if translation results contain Chinese characters
+            check_line_count: Whether to check if line count difference exceeds 5%
         """
         self.target_lang = target_lang
         self.user = user
@@ -44,6 +45,7 @@ class DocumentTranslator:
         self.current_tasks = {}  # Track current task for each worker
         self.max_workers = None  # Store the maximum number of workers
         self.check_chinese = check_chinese  # Whether to check for Chinese characters in translation results
+        self.check_line_count = check_line_count  # Whether to check line count difference
         
         # 设置翻译日志
         self._setup_translation_logger()
@@ -149,7 +151,7 @@ class DocumentTranslator:
                         "target_language": self.target_lang,
                         "input_content": text
                     },
-                    "query": self.query if not conversation_id else "请继续翻译",
+                    "query": self.query if not conversation_id else "请按要求继续将 input_content 中的内容翻译为指定的目标语言。",
                     "response_mode": self.response_mode,
                     "conversation_id": conversation_id,
                     "user": self.user
@@ -350,8 +352,10 @@ class DocumentTranslator:
             # 记录文件翻译开始
             self.translation_logger.info(f"开始翻译文件 - {source_path.name} ({current_file}/{total_files}) - 源路径: {source_path}")
             
+            # 读取源文件内容并计算行数
             with open(source_path, 'r', encoding='utf-8') as f:
                 content = f.read()
+                source_lines = content.count('\n') + (1 if content else 0)  # 计算源文件行数
             
             # Update desc to include file progress
             desc = f"{desc} ({current_file}/{total_files})"
@@ -365,6 +369,29 @@ class DocumentTranslator:
             target_path.parent.mkdir(parents=True, exist_ok=True)
             with open(target_path, 'w', encoding='utf-8') as f:
                 f.write(translated_content)
+            
+            # 如果启用了行数检查，比较行数差异
+            if self.check_line_count:
+                target_lines = translated_content.count('\n') + (1 if translated_content else 0)  # 计算翻译结果行数
+                line_diff = abs(target_lines - source_lines)
+                line_diff_percent = (line_diff / source_lines * 100) if source_lines > 0 else 0
+                
+                self.translation_logger.info(f"行数检查 - {source_path.name} - 源文件行数: {source_lines} - 翻译结果行数: {target_lines} - 差异: {line_diff} ({line_diff_percent:.2f}%)")
+                
+                # 如果行数差异超过5%，删除翻译结果文件并抛出错误
+                if line_diff_percent > 5:
+                    error_msg = f"翻译结果行数差异超过5% - {source_path.name} - 源文件行数: {source_lines} - 翻译结果行数: {target_lines} - 差异: {line_diff_percent:.2f}%"
+                    self.translation_logger.error(error_msg)
+                    
+                    # 删除翻译结果文件
+                    try:
+                        if target_path.exists():
+                            target_path.unlink()
+                            self.translation_logger.info(f"已删除翻译结果文件 - {target_path}")
+                    except Exception as delete_error:
+                        self.translation_logger.warning(f"删除翻译结果文件失败 - {target_path} - 错误: {str(delete_error)}")
+                    
+                    raise TranslationError(error_msg)
             
             # 记录文件翻译成功
             self.translation_logger.info(f"文件翻译成功 - {source_path.name} - 目标路径: {target_path} - 翻译后长度: {len(translated_content)} 字符")

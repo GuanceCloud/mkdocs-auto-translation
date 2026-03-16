@@ -16,16 +16,17 @@ from fnmatch import fnmatch
 @click.option('--target-language', required=True, help='The target language code')
 @click.option('--api-key', help='DifyAI API key')
 @click.option('--user', help='User name')
-@click.option('--query', help='Query string', default='请翻译。')
+@click.option('--query', help='Query string', default='请将 input_content 中的内容翻译为指定的目标语言。')
 @click.option('--response-mode', help='Response mode', type=click.Choice(['streaming', 'blocking']), default='streaming')
 @click.option('--workers', type=int, default=1, help='Number of parallel workers')
 @click.option('--overwrite-resources', is_flag=True, default=False, help='Whether to overwrite resource files in target directory')
 @click.option('--delete-removed-resources', is_flag=True, default=False, help='Whether to delete resource files in target directory that no longer exist in source directory')
 @click.option('--check-chinese', is_flag=True, default=False, help='Whether to check if translation results contain Chinese characters')
+@click.option('--check-line-count', is_flag=True, default=False, help='Whether to check if line count difference between source and translated files exceeds 5%')
 def translate(source: str, target: str,
              target_language: str, api_key: Optional[str], user: Optional[str], 
              query: Optional[str], response_mode: str, workers: int,
-             overwrite_resources: bool, delete_removed_resources: bool, check_chinese: bool):
+             overwrite_resources: bool, delete_removed_resources: bool, check_chinese: bool, check_line_count: bool):
     """Translate MkDocs documents"""
     # set log module
     logging.basicConfig(
@@ -43,7 +44,7 @@ def translate(source: str, target: str,
     blacklist = load_blacklist(blacklist_file)
     
     # Initialize components
-    translator = DocumentTranslator(target_language, user=user, query=query, response_mode=response_mode, api_key=api_key, check_chinese=check_chinese)
+    translator = DocumentTranslator(target_language, user=user, query=query, response_mode=response_mode, api_key=api_key, check_chinese=check_chinese, check_line_count=check_line_count)
     metadata_manager = MetadataManager(metadata_path, source_path)
     last_metadata_manager = MetadataManager(last_metadata_path, source_path)
     
