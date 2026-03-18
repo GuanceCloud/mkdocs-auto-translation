@@ -236,6 +236,88 @@ class DocumentTranslator:
         
         raise TranslationError(f"API调用失败，已达最大重试次数 {MAX_RETRIES}: {last_error}")
 
+    def translate_paragraph(
+        self,
+        text: str,
+        reference: Optional[str] = None,
+        translation_memory: Optional[List[Dict]] = None,
+        position: int = 0,
+        desc: str = "Translating"
+    ) -> Tuple[str, Dict]:
+        """
+        Translate a single paragraph with context and terminology memory.
+
+        Args:
+            text: The text to translate
+            reference: Reference translation for similar content
+            translation_memory: List of terminology entries
+            position: The position for the progress bar
+            desc: Description for the progress bar
+
+        Returns:
+            The translated text and metadata
+        """
+        try:
+            self.translation_logger.info(f"开始翻译段落 - {desc} - 文本长度: {len(text)} 字符")
+
+            system_prompt = self._build_enhanced_prompt(translation_memory, reference)
+            user_message = self._build_user_message(text)
+
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message}
+            ]
+
+            self.translation_logger.info(f"发送翻译请求 - {desc} - 目标语言: {self.target_lang}")
+
+            translation, usage_data = self._call_llm_api(
+                messages,
+                is_continuation=False,
+                position=position,
+                desc=desc
+            )
+
+            if self.check_chinese and self._contains_chinese(translation):
+                error_msg = f"翻译结果包含中文字符 - {desc} - 检测到的中文字符内容: {translation[:100]}..."
+                self.translation_logger.error(error_msg)
+                raise TranslationError(f"翻译结果包含中文字符，翻译失败。")
+
+            self.translation_logger.info(f"段落翻译完成 - {desc} - tokens: {usage_data['total_tokens']}")
+
+            return translation, usage_data
+
+        except Exception as e:
+            error_msg = f"段落翻译失败 - {desc} - 错误信息: {str(e)}"
+            self.translation_logger.error(error_msg)
+            raise TranslationError(f"Paragraph translation failed: {str(e)}")
+
+    def _build_enhanced_prompt(
+        self,
+        translation_memory: Optional[List[Dict]] = None,
+        reference: Optional[str] = None
+    ) -> str:
+        """Build enhanced system prompt with terminology and reference."""
+        prompt_parts = [TRANSLATION_SYSTEM_PROMPT]
+
+        if translation_memory:
+            terms_text = "\n".join(
+                f"- {entry['source']} → {entry['translation']}"
+                for entry in translation_memory[:50]
+            )
+            prompt_parts.append(f"\n\n## 术语表（必须保持一致）\n{terms_text}")
+
+        if reference:
+            prompt_parts.append(f"\n\n## 参考翻译（相似段落，请保持一致的表达方式）\n{reference}")
+
+        return "".join(prompt_parts)
+
+    def _build_user_message(self, text: str) -> str:
+        """Build user message for translation."""
+        return f"""<input>
+<input_content>{text}</input_content>
+<target_language>{self.target_lang}</target_language>
+</input>"""
+
     def translate_text(self, text: str, position: int = 0, desc: str = "Translating") -> Tuple[str, Dict]:
         """
         Translate text using the LLM API (OpenAI compatible)
