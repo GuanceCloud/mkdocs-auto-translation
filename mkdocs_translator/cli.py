@@ -161,13 +161,11 @@ def translate(source: str, target: str,
         last_metadata_manager: MetadataManager,
         cache_manager: CacheManager,
         worker_id: int,
-        worker_tasks_count: dict
+        current_file_num: int = 1,
+        total_files: int = 1
     ) -> bool:
         relative_path = source_file.relative_to(source_path)
         target_file = target_path / relative_path
-
-        total_files = len(worker_tasks_count[worker_id])
-        current_file_num = worker_tasks_count[worker_id].index(source_file) + 1
 
         try:
             logging.info(f"开始增量翻译 - {relative_path} ({current_file_num}/{total_files})")
@@ -368,31 +366,51 @@ def translate(source: str, target: str,
             source_path=source_path,
             metadata_manager=metadata_manager,
             last_metadata_manager=last_metadata_manager,
-            cache_manager=cache_manager,
-            worker_tasks_count=worker_tasks  # Pass the worker tasks information
+            cache_manager=cache_manager
         )
         
+        def worker_process_files(worker_id: int, files: list):
+            """Worker processes its assigned files sequentially"""
+            local_success = 0
+            local_error = 0
+            total_files = len(files)
+            for current_file_num, source_file in enumerate(files, 1):
+                try:
+                    result = process_func(
+                        source_file=source_file, 
+                        worker_id=worker_id,
+                        current_file_num=current_file_num,
+                        total_files=total_files
+                    )
+                    if result:
+                        local_success += 1
+                    else:
+                        local_error += 1
+                except Exception as e:
+                    logging.error(f"Worker {worker_id} 处理文件 {source_file} 异常: {e}")
+                    local_error += 1
+            return local_success, local_error
+        
         futures = []
-        for file, worker_id in tasks:
-            future = executor.submit(process_func, source_file=file, worker_id=worker_id)
+        for worker_id, files in worker_tasks.items():
+            future = executor.submit(worker_process_files, worker_id, files)
             futures.append(future)
         
         # Monitor completion
-        cached_paragraphs = 0
         for future in concurrent.futures.as_completed(futures):
-            result = future.result()
-            if result is True:
-                success_count += 1
-                logging.info(f"翻译进度: {success_count}/{len(files_to_translate_exclude_translated)} 成功")
-            elif result is False:
+            try:
+                local_success, local_error = future.result()
+                success_count += local_success
+                error_count += local_error
+            except Exception as e:
+                logging.error(f"Worker 执行异常: {e}")
                 error_count += 1
-                logging.error(f"翻译进度: {error_count}/{len(files_to_translate_exclude_translated)} 失败")
             
             with _pbar_lock:
                 main_pbar.set_description(
-                    f"Total: {len(files_to_translate_exclude_translated)} files | Completed: {success_count} | Failed: {error_count} | Cached: {cached_paragraphs} paras"
+                    f"Total: {len(files_to_translate_exclude_translated)} files | Completed: {success_count} | Failed: {error_count} | Cached: 0 paras"
                 )
-                main_pbar.update(1)
+                main_pbar.update(success_count + error_count - main_pbar.n)
         
         main_pbar.clear()
         main_pbar.close()
