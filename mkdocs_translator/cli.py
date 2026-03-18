@@ -12,8 +12,10 @@ from tqdm import tqdm
 import concurrent.futures
 from functools import partial
 from fnmatch import fnmatch
+import threading
 
 _worker_pbars: Dict[int, Optional[tqdm]] = {}
+_pbar_lock = threading.Lock()
 
 @click.command()
 @click.option('--source', required=True, type=click.Path(exists=True), help='The source document directory')
@@ -188,22 +190,23 @@ def translate(source: str, target: str,
                 if all_cached:
                     logging.info(f"文档未变化，使用缓存 - {relative_path}")
                     
-                    pbar = _worker_pbars.get(worker_id)
-                    if pbar is None:
-                        pbar = tqdm(
-                            total=1,
-                            desc=f"Worker {worker_id + 1}: ({current_file_num}/{total_files}) {relative_path.name} [p {len(paragraphs)}/{len(paragraphs)}] (使用缓存:{len(paragraphs)}/{len(paragraphs)})",
-                            position=worker_id,
-                            leave=True,
-                            dynamic_ncols=True,
-                            mininterval=0.5,
-                            bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}'
-                        )
-                        _worker_pbars[worker_id] = pbar
-                    else:
-                        pbar.reset(total=1)
-                        pbar.set_description(f"Worker {worker_id + 1}: ({current_file_num}/{total_files}) {relative_path.name} [p {len(paragraphs)}/{len(paragraphs)}] (使用缓存:{len(paragraphs)}/{len(paragraphs)})")
-                    pbar.update(1)
+                    with _pbar_lock:
+                        pbar = _worker_pbars.get(worker_id)
+                        if pbar is None:
+                            pbar = tqdm(
+                                total=1,
+                                desc=f"Worker {worker_id + 1}: ({current_file_num}/{total_files}) {relative_path.name} [p {len(paragraphs)}/{len(paragraphs)}] (使用缓存:{len(paragraphs)}/{len(paragraphs)})",
+                                position=worker_id,
+                                leave=True,
+                                dynamic_ncols=True,
+                                mininterval=0.5,
+                                bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}'
+                            )
+                            _worker_pbars[worker_id] = pbar
+                        else:
+                            pbar.reset(total=1)
+                            pbar.set_description(f"Worker {worker_id + 1}: ({current_file_num}/{total_files}) {relative_path.name} [p {len(paragraphs)}/{len(paragraphs)}] (使用缓存:{len(paragraphs)}/{len(paragraphs)})")
+                        pbar.update(1)
                     
                     _assemble_from_cache(paragraphs, cache, target_file)
                     metadata_manager.update_file_status(relative_path, True, {'translation_time': 0})
@@ -228,21 +231,22 @@ def translate(source: str, target: str,
             cached_count = total_paragraphs - total_need
             cache_info = f"(缓存:{cached_count}/{total_paragraphs})"
 
-            pbar = _worker_pbars.get(worker_id)
-            if pbar is None:
-                pbar = tqdm(
-                    total=total_need if total_need > 0 else 1,
-                    desc=f"Worker {worker_id + 1}: ({current_file_num}/{total_files}) {relative_path.name} [p 0/{total_paragraphs}] {cache_info}",
-                    position=worker_id,
-                    leave=True,
-                    dynamic_ncols=True,
-                    mininterval=0.5,
-                    bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}'
-                )
-                _worker_pbars[worker_id] = pbar
-            else:
-                pbar.reset(total=total_need if total_need > 0 else 1)
-                pbar.set_description(f"Worker {worker_id + 1}: ({current_file_num}/{total_files}) {relative_path.name} [p 0/{total_paragraphs}] {cache_info}")
+            with _pbar_lock:
+                pbar = _worker_pbars.get(worker_id)
+                if pbar is None:
+                    pbar = tqdm(
+                        total=total_need if total_need > 0 else 1,
+                        desc=f"Worker {worker_id + 1}: ({current_file_num}/{total_files}) {relative_path.name} [p 0/{total_paragraphs}] {cache_info}",
+                        position=worker_id,
+                        leave=True,
+                        dynamic_ncols=True,
+                        mininterval=0.5,
+                        bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}'
+                    )
+                    _worker_pbars[worker_id] = pbar
+                else:
+                    pbar.reset(total=total_need if total_need > 0 else 1)
+                    pbar.set_description(f"Worker {worker_id + 1}: ({current_file_num}/{total_files}) {relative_path.name} [p 0/{total_paragraphs}] {cache_info}")
 
             if total_need > 0:
 
@@ -253,9 +257,10 @@ def translate(source: str, target: str,
                 }
 
                 for idx, (para, reference) in enumerate(need_translate):
-                    pbar.set_description(
-                        f"Worker {worker_id + 1}: ({current_file_num}/{total_files}) {relative_path.name} [p {idx+1}/{total_paragraphs}] {cache_info}"
-                    )
+                    with _pbar_lock:
+                        pbar.set_description(
+                            f"Worker {worker_id + 1}: ({current_file_num}/{total_files}) {relative_path.name} [p {idx+1}/{total_paragraphs}] {cache_info}"
+                        )
                     translation, usage_data = translator.translate_paragraph(
                         para.content,
                         reference=reference,
@@ -278,7 +283,8 @@ def translate(source: str, target: str,
 
                     cache_manager.extract_and_update_memory(cache, para.content, translation)
 
-                    pbar.update(1)
+                    with _pbar_lock:
+                        pbar.update(1)
 
                 translated_metadata = {
                     'translation_time': 0,
@@ -287,8 +293,9 @@ def translate(source: str, target: str,
             else:
                 translated_metadata = {'translation_time': 0}
                 cache_info = f"(使用缓存:{total_paragraphs}/{total_paragraphs})"
-                pbar.set_description(f"Worker {worker_id + 1}: ({current_file_num}/{total_files}) {relative_path.name} [p {total_paragraphs}/{total_paragraphs}] {cache_info}")
-                pbar.update(1)
+                with _pbar_lock:
+                    pbar.set_description(f"Worker {worker_id + 1}: ({current_file_num}/{total_files}) {relative_path.name} [p {total_paragraphs}/{total_paragraphs}] {cache_info}")
+                    pbar.update(1)
 
             _assemble_from_cache(paragraphs, cache, target_file)
 
@@ -381,22 +388,24 @@ def translate(source: str, target: str,
                 error_count += 1
                 logging.error(f"翻译进度: {error_count}/{len(files_to_translate_exclude_translated)} 失败")
             
-            main_pbar.set_description(
-                f"Total: {len(files_to_translate_exclude_translated)} files | Completed: {success_count} | Failed: {error_count} | Cached: {cached_paragraphs} paras"
-            )
-            main_pbar.update(1)
+            with _pbar_lock:
+                main_pbar.set_description(
+                    f"Total: {len(files_to_translate_exclude_translated)} files | Completed: {success_count} | Failed: {error_count} | Cached: {cached_paragraphs} paras"
+                )
+                main_pbar.update(1)
         
         main_pbar.clear()
         main_pbar.close()
         
         # Close all worker progress bars
-        for worker_id, pbar in list(_worker_pbars.items()):
-            if pbar is not None:
-                try:
-                    pbar.close()
-                except Exception:
-                    pass
-        _worker_pbars.clear()
+        with _pbar_lock:
+            for worker_id, pbar in list(_worker_pbars.items()):
+                if pbar is not None:
+                    try:
+                        pbar.close()
+                    except Exception:
+                        pass
+            _worker_pbars.clear()
         
         # 记录翻译任务完成
         logging.info(f"翻译任务完成 - 成功: {success_count} 文件 - 失败: {error_count} 文件")
