@@ -14,7 +14,9 @@ from fnmatch import fnmatch
 @click.option('--source', required=True, type=click.Path(exists=True), help='The source document directory')
 @click.option('--target', required=True, type=click.Path(), help='The target translation directory')
 @click.option('--target-language', required=True, help='The target language code')
-@click.option('--api-key', help='DifyAI API key')
+@click.option('--api-key', help='LLM API key (compatible with OpenAI format)')
+@click.option('--base-url', help='LLM API base URL (default: https://api.openai.com/v1)')
+@click.option('--model', help='Model name to use', default='gpt-4o')
 @click.option('--user', help='User name')
 @click.option('--query', help='Query string', default='请将 input_content 中的内容翻译为指定的目标语言。')
 @click.option('--response-mode', help='Response mode', type=click.Choice(['streaming', 'blocking']), default='streaming')
@@ -24,8 +26,8 @@ from fnmatch import fnmatch
 @click.option('--check-chinese', is_flag=True, default=False, help='Whether to check if translation results contain Chinese characters')
 @click.option('--check-line-count', is_flag=True, default=False, help='Whether to check if line count difference between source and translated files exceeds 5%')
 def translate(source: str, target: str,
-             target_language: str, api_key: Optional[str], user: Optional[str], 
-             query: Optional[str], response_mode: str, workers: int,
+             target_language: str, api_key: Optional[str], base_url: Optional[str], model: str,
+             user: Optional[str], query: Optional[str], response_mode: str, workers: int,
              overwrite_resources: bool, delete_removed_resources: bool, check_chinese: bool, check_line_count: bool):
     """Translate MkDocs documents"""
     # set log module
@@ -44,7 +46,17 @@ def translate(source: str, target: str,
     blacklist = load_blacklist(blacklist_file)
     
     # Initialize components
-    translator = DocumentTranslator(target_language, user=user, query=query, response_mode=response_mode, api_key=api_key, check_chinese=check_chinese, check_line_count=check_line_count)
+    translator = DocumentTranslator(
+        target_language, 
+        user=user or "default_user", 
+        query=query, 
+        response_mode=response_mode, 
+        api_key=api_key, 
+        check_chinese=check_chinese, 
+        check_line_count=check_line_count,
+        base_url=base_url,
+        model=model
+    )
     metadata_manager = MetadataManager(metadata_path, source_path)
     last_metadata_manager = MetadataManager(last_metadata_path, source_path)
     

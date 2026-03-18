@@ -6,13 +6,147 @@ import json
 from tqdm import tqdm
 import hashlib
 from datetime import datetime
-import logging  # 保留导入，因为还需要使用 logging.info()
-import re  # 添加re模块用于正则表达式匹配中文字符
+import logging
+import re
+import time
+from openai import OpenAI
+
+TRANSLATION_SYSTEM_PROMPT = """<instruction>
+根据提供的文档内容和目标语言，将给定的Markdown或YAML格式的文本翻译成指定的语言。确保翻译过程中保留原始格式不变，包括但不限于标题、列表、链接等元素。
+1. 输出结果不应包含任何XML标签。
+2. 输出结果不要添加任何额外的标记，如把整个 Markdown 或 YAML 内容包含在代码块标记中。
+3. 关键要求：**必须使用纯目标语言的标点符号**，具体规范：
+    * 逗号请使用英文半角逗号 `,` ，而非中文全角逗号 `，`
+    * 句号请使用英文半角句号 `.` ，而非中文全角句号 `。`
+    * 引号请使用 `" "` 或 `' '`，而非 `“ ”` 或 `‘ ’`
+    * 括号请使用 `( )` 或 `[ ]`，而非 `（ ）` 或 `【 】`
+    * 其他所有标点符号（如冒号、分号、问号、感叹号等）也请遵循此规则，使用英文半角格式。
+4. 当我告诉你 "请继续翻译" 时，请继续前一次未完成的翻译，继续翻译的结果，请不要添加额外的代码块等标记，也不要添加额外的翻译结果之外的内容。
+5. 输入内容中被 <<< >>> 标记的为模板变量，请不要翻译，原样保留。
+6. 所有单独的一个中文名词，英语翻译结果请都使用复数形式。
+7. 原样保留原文中所有的 markdown 注释以及 HTML 标记语法、空行，不要做任何删减，如 、<front></front> 等，但对于代码块中的注释，请翻译为目标语言。
+8. 请不要添加与扩展任何额外的内容，完全遵守原文，翻译成目标语言内容。
+9. markdown 有序项目编号，请全部使用 "1. "， 编号不要自增。
+
+1. **专用名词翻译**：
+   - 使用以下预置词典进行专用名词的翻译：
+      - 观测云: Guance
+      - 应用性能监测: APM
+      - 用户访问监测: RUM
+      - 体验版: Free Plan
+      - 商业版: Commercial Plan
+      - 部署版: Deployment Plan
+      - 专属版: Exclusive Plan
+      - 指标: Metrics
+      - 指标集: Measurement
+      - 资源目录: Resource Catalog
+      - 资源分类: Resource Class
+      - 时间线: Time Series
+      - 排行榜: Top List
+      - 查看器: Explorer
+      - 异常追踪: Incident
+      - 总览: Summary
+      - 静默: Mute
+      - 服务清单: Service List
+      - 服务拓扑: Service Map
+      - 顶层 Span: Top Span
+      - 服务顶层 Span: Service Entry Span
+      - 页面: View
+      - 操作: Action
+      - 用户洞察: User Analysis
+      - 可用性监测: Synthetic Tests
+      - 自建节点: Self-built Nodes
+      - 安全巡检: Security Check
+      - 可用性数据检测: Synthetic Testing Anomaly Detection
+      - 通知对象管理: Notification Targets
+      - DataFlux Func 托管版: DataFlux Func (Automata)
+      - 作战室: Warroom
+      - 个人设置: User Settings
+      - 属性声明: Attribute Claims
+      - 危险操作: Risky Operations
+      - 任务调用: Triggers
+      - API 拨测: API Tests
+      - 多步拨测: Multistep Tests
+      - 服务费: Service Charges
+      - 快捷入口: Shortcut
+      - 空间管理: Workspace Management
+      - 安全断言标记语言: SAML
+      - 存在: Exist
+      - 不存在: Not exist
+      - 智能巡检: Intelligent Inspection
+      - 概念先解: Concepts
+      - 开始新建: Create
+      - 新建规则: Create
+      - 新建通知策略: Create
+      - 新建日程: Create
+      - 新建频道: Create
+      - 新建 Issue: Create
+      - 新建索引: Create
+      - 新建标签: Create
+      - 新建查看器: Create
+      - 新增字段: Create
+      - 新建追踪: Create 
+      - 新建节点: Create
+      - 管理策略: Manage
+      - 管理 Issue: Manage
+      - 管理索引: Manage
+      - 管理标签: Manage
+      - 管理查看器: Manage
+      - 节点管理: Manage
+      - 管理节点: Manage
+      - 管理规则: Manage Rules
+      - 规则管理: Manage Rules
+      - 管理策略列表: Manage Rules
+      - 功能介绍: Features
+      - 功能模块: Features
+      - 聚类分析: Pattern
+      - 开始配置: Configure
+      - 概览: Overview
+      - 版本说明: Plans
+      - 付费计划与账单 Billing
+      - 费用中心账号: Billing Center account
+      - 观测云费用中心 Guance Billing Center
+      - 用户访问 PV RUM PV
+      - 相关配置/配置步骤: Configuration
+      - 列表操作/相关操作: Options
+      - 时间控件: Time Widget
+      - 使用场景: Use Cases
+      - 适用场景: Use Cases
+      - 使用范围: Use Cases
+      - 飞书: Lark
+      - 告警策略管理: Alert Strategies
+      - 通知对象管理: Notification Targets
+      - 企业微信: WeCom
+      - 批量操作: Batch operations
+      - 阿里云: Alibaba Cloud
+      - 腾讯云: Tencent Cloud
+      - 华为云: Huawei Cloud
+      - 火山引擎: Volcengine
+      - 谷歌云: GCP
+      - 中间件: MIDDLEWARE
+      - 主机: HOST
+      - 容器: CONTAINERS
+      - 网络: NETWORK
+      - 缓存: CACHING
+      - 消息队列: MESSAGE QUEUES
+      - 数据库: DATABASE
+      - 语言: LANGUAGE
+      - 链路追踪: APM
+      - 日志: LOG
+      - 拨测: TESTING
+      - 移动端: MOBILE
+      - 会话重放: SESSION REPLAY
+   - 确保这些专用名词在翻译时严格按照词典处理。
+
+</instruction>"""
+
+MAX_RETRIES = 3
+REQUEST_TIMEOUT = 120
 
 class DocumentTranslator:
     """The main class for handling document translation."""
     
-    def __init__(self, target_lang: str, user: str, query: str, response_mode: str = "streaming", api_key: Optional[str] = None, check_chinese: bool = False, check_line_count: bool = False):
+    def __init__(self, target_lang: str, user: str = "default_user", query: str = "请将 input_content 中的内容翻译为指定的目标语言。", response_mode: str = "streaming", api_key: Optional[str] = None, check_chinese: bool = False, check_line_count: bool = False, base_url: Optional[str] = None, model: str = "gpt-4o"):
         """
         Initialize the translator.
         
@@ -21,33 +155,32 @@ class DocumentTranslator:
             user: The user name
             query: The query string
             response_mode: The response mode, optional values are "streaming" or "blocking".
-            api_key: The Dify AI API key
+            api_key: The LLM API key (compatible with OpenAI format)
             check_chinese: Whether to check if translation results contain Chinese characters
             check_line_count: Whether to check if line count difference exceeds 5%
+            base_url: The base URL for the LLM API (optional, for compatible API endpoints)
+            model: The model name to use (default: gpt-4o)
         """
         self.target_lang = target_lang
         self.user = user
         self.query = query
         self.response_mode = response_mode
-        self.api_key = api_key or os.getenv('DIFY_API_KEY')
+        self.api_key = api_key or os.getenv('OPENAI_API_KEY')
         if not self.api_key:
-            raise ValueError("Dify API key must be provided either through api_key parameter or DIFY_API_KEY environment variable")
+            raise ValueError("API key must be provided either through api_key parameter or OPENAI_API_KEY environment variable")
         
-        self.api_url = "https://dify.guance.com/v1/chat-messages"
-        # self.api_url = "https://dify.guance.com/v1/completion-messages"
-        self.headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
+        self.base_url = base_url or os.getenv('OPENAI_BASE_URL', 'https://api.openai.com/v1')
+        self.model = model
+        
+        self.client = OpenAI(api_key=self.api_key, base_url=self.base_url)
         
         self.progress_bars = {}
-        self.active_positions = set()  # Track active worker positions
-        self.current_tasks = {}  # Track current task for each worker
-        self.max_workers = None  # Store the maximum number of workers
-        self.check_chinese = check_chinese  # Whether to check for Chinese characters in translation results
-        self.check_line_count = check_line_count  # Whether to check line count difference
+        self.active_positions = set()
+        self.current_tasks = {}
+        self.max_workers = None
+        self.check_chinese = check_chinese
+        self.check_line_count = check_line_count
         
-        # 设置翻译日志
         self._setup_translation_logger()
         
     def _setup_translation_logger(self):
@@ -108,9 +241,69 @@ class DocumentTranslator:
         
         return pbar
 
+    def _call_llm_api(self, messages: List[Dict], is_continuation: bool = False, position: int = 0, desc: str = "Translating") -> Tuple[str, Dict]:
+        """
+        Call LLM API with retry mechanism and timeout control.
+        
+        Args:
+            messages: The messages to send to the API
+            is_continuation: Whether this is a continuation request
+            position: The position for the progress bar
+            desc: Description for the progress bar
+            
+        Returns:
+            The response content and usage metadata
+        """
+        last_error = None
+        
+        for attempt in range(MAX_RETRIES):
+            try:
+                if is_continuation:
+                    self.translation_logger.info(f"重试第 {attempt + 1}/{MAX_RETRIES} 次 - 继续翻译 - {desc}")
+                else:
+                    self.translation_logger.info(f"重试第 {attempt + 1}/{MAX_RETRIES} 次 - 翻译请求 - {desc}")
+                
+                response = self.client.chat.completions.with_raw_response.create(
+                    model=self.model,
+                    messages=messages,
+                    temperature=0.1,
+                    timeout=REQUEST_TIMEOUT
+                )
+                
+                if response.status_code != 200:
+                    error_msg = f"API请求失败 - {desc} - 状态码: {response.status_code} - 响应: {response.text}"
+                    self.translation_logger.error(error_msg)
+                    last_error = f"API request failed with status code {response.status_code}: {response.text}"
+                    time.sleep(2 ** attempt)
+                    continue
+                
+                result = response.parse()
+                
+                content = result.choices[0].message.content
+                usage = result.usage
+                
+                usage_data = {
+                    "prompt_tokens": usage.prompt_tokens,
+                    "completion_tokens": usage.completion_tokens,
+                    "total_tokens": usage.total_tokens
+                }
+                
+                self.translation_logger.info(f"API调用成功 - {desc} - 使用tokens: {usage.total_tokens}")
+                
+                return content, usage_data
+                
+            except Exception as e:
+                error_msg = f"API调用异常 - {desc} - 错误信息: {str(e)}"
+                self.translation_logger.error(error_msg)
+                last_error = str(e)
+                time.sleep(2 ** attempt)
+                continue
+        
+        raise TranslationError(f"API调用失败，已达最大重试次数 {MAX_RETRIES}: {last_error}")
+
     def translate_text(self, text: str, position: int = 0, desc: str = "Translating") -> Tuple[str, Dict]:
         """
-        Translate text using the Dify AI API
+        Translate text using the LLM API (OpenAI compatible)
         
         Args:
             text: The text to translate
@@ -121,210 +314,96 @@ class DocumentTranslator:
             The translated text and metadata
         """
         try:
-            # 记录翻译开始
             self.translation_logger.info(f"开始翻译 - {desc} - 文本长度: {len(text)} 字符")
             
             full_translation = []
-            conversation_id = ""
             start_time = datetime.now()
             
-            # Initialize cumulative usage
             cumulative_usage = {
                 "prompt_tokens": 0,
                 "completion_tokens": 0,
-                "total_tokens": 0,
-                "prompt_price": 0.0,
-                "completion_price": 0.0,
-                "total_price": 0.0,
-                "currency": "USD"
+                "total_tokens": 0
             }
             
             chunk_count = 0
             
-            # Ensure we're using the correct progress bar for this worker
             pbar = self._create_progress_bar(position, desc)
-            current_task = desc  # Store the current task description
+            current_task = desc
             
             while True:
-                payload = {
-                    "inputs": {
-                        "target_language": self.target_lang,
-                        "input_content": text
-                    },
-                    "query": self.query if not conversation_id else "请按要求继续将 input_content 中的内容翻译为指定的目标语言。",
-                    "response_mode": self.response_mode,
-                    "conversation_id": conversation_id,
-                    "user": self.user
-                }
+                user_message = f"""<input>
+<input_content>{text}</input_content>
+<target_language>{self.target_lang}</target_language>
+</input>"""
                 
-                # 记录API请求
-                if not conversation_id:
+                if not full_translation:
+                    messages = [
+                        {"role": "system", "content": TRANSLATION_SYSTEM_PROMPT},
+                        {"role": "user", "content": user_message}
+                    ]
                     self.translation_logger.info(f"发送翻译请求 - {desc} - 目标语言: {self.target_lang}")
                 else:
-                    self.translation_logger.info(f"继续翻译请求 - {desc} - 会话ID: {conversation_id}")
+                    messages = [
+                        {"role": "system", "content": TRANSLATION_SYSTEM_PROMPT},
+                        {"role": "user", "content": "请继续翻译"}
+                    ]
+                    self.translation_logger.info(f"继续翻译请求 - {desc}")
                 
-                response = requests.post(
-                    self.api_url,
-                    headers=self.headers,
-                    json=payload,
-                    stream=self.response_mode == "streaming"
+                current_translation, usage_data = self._call_llm_api(
+                    messages, 
+                    is_continuation=bool(full_translation),
+                    position=position,
+                    desc=desc
                 )
                 
-                if response.status_code != 200:
-                    error_msg = f"API请求失败 - {desc} - 状态码: {response.status_code} - 响应: {response.text}"
+                cumulative_usage["prompt_tokens"] += usage_data["prompt_tokens"]
+                cumulative_usage["completion_tokens"] += usage_data["completion_tokens"]
+                cumulative_usage["total_tokens"] += usage_data["total_tokens"]
+                
+                if self.check_chinese and self._contains_chinese(current_translation):
+                    error_msg = f"翻译结果包含中文字符 - {desc} - 检测到的中文字符内容: {current_translation[:100]}..."
                     self.translation_logger.error(error_msg)
-                    raise TranslationError(f"API request failed with status code {response.status_code}: {response.text}")
+                    raise TranslationError(f"翻译结果包含中文字符，翻译失败。检测到的中文字符内容: {current_translation[:100]}...")
                 
-                current_translation = []
-                reached_token_limit = False
+                full_translation.append(current_translation)
+                chunk_count += 1
+                elapsed = (datetime.now() - start_time).total_seconds()
+                chunks_per_second = chunk_count / elapsed if elapsed > 0 else 0
                 
-                if self.response_mode == "streaming":
-                    for line in response.iter_lines(decode_unicode=True):
-                        if not line:
-                            continue
-
-                        # print(line)    
-                        
-                        try:
-                            if line.startswith('data: '):
-                                line = line[6:]
-                            data = json.loads(line)
-                            
-                            # process message end event
-                            if "event" in data and data["event"] == "message_end":
-                                if "metadata" in data:
-                                    metadata = data["metadata"]
-                                    if "usage" in metadata:
-                                        usage = metadata["usage"]
-                                        # Accumulate usage data
-                                        cumulative_usage["prompt_tokens"] += int(usage.get("prompt_tokens", 0))
-                                        cumulative_usage["completion_tokens"] += int(usage.get("completion_tokens", 0))
-                                        cumulative_usage["total_tokens"] = cumulative_usage["prompt_tokens"] + cumulative_usage["completion_tokens"]
-                                        cumulative_usage["prompt_price"] += float(usage.get("prompt_price", 0))
-                                        cumulative_usage["completion_price"] += float(usage.get("completion_price", 0))
-                                        cumulative_usage["total_price"] += float(usage.get("total_price", 0))
-                                        
-                                        if usage.get("completion_tokens") >= 8192:
-                                            reached_token_limit = True
-                                            conversation_id = data.get("conversation_id", "")
-                                            cumulative_usage["exceed_token_limit"] = True
-
-                                            self.translation_logger.warning(f"达到token限制 - {desc} - 完成tokens: {usage.get('completion_tokens')} - 会话ID: {conversation_id}")
-                                            print("data: ", line)
-                                            print(f"Reached token limit: {usage.get('completion_tokens')} tokens, conversation_id: {conversation_id}")
-                                # print("message end: ", line)
-                                break
-                                
-                            if "answer" in data:
-                                chunk = data["answer"]
-                                # 检查翻译结果是否包含中文字符（如果启用了检测）
-                                if self.check_chinese and self._contains_chinese(chunk):
-                                    error_msg = f"翻译结果包含中文字符 - {desc} - 检测到的中文字符内容: {chunk[:100]}..."
-                                    self.translation_logger.error(error_msg)
-                                    raise TranslationError(f"翻译结果包含中文字符，翻译失败。检测到的中文字符内容: {chunk[:100]}...")
-                                
-                                current_translation.append(chunk)
-                                chunk_count += 1
-                                elapsed = (datetime.now() - start_time).total_seconds()
-                                chunks_per_second = chunk_count / elapsed if elapsed > 0 else 0
-                                
-                                # 记录翻译进度
-                                if chunk_count % 10 == 0:  # 每10个chunk记录一次进度
-                                    self.translation_logger.info(f"翻译进度 - {desc} - 已翻译: {chunk_count} chunks - 速度: {chunks_per_second:.1f} chunks/s - 耗时: {elapsed:.1f}s")
-                                
-                                # Only update if this is still the current task for this worker
-                                if position in self.progress_bars and self.current_tasks.get(position) == current_task:
-                                    status = f"{desc} [{chunk_count} chunks, {chunks_per_second:.1f} chunks/s, {elapsed:.1f}s]"
-                                    self.progress_bars[position].set_description(status)
-                                    self.progress_bars[position].update(1)
-                            elif "error" in data:
-                                error_msg = f"API错误 - {desc} - 错误信息: {data['error']}"
-                                self.translation_logger.error(error_msg)
-                                raise TranslationError(f"API error: {data['error']}")
-                        except json.JSONDecodeError:
-                            continue
-                else:
-                    # Process blocking mode responses
-                    data = response.json()
-                    if "answer" in data:
-                        answer = data["answer"]
-                        # 检查翻译结果是否包含中文字符（如果启用了检测）
-                        if self.check_chinese and self._contains_chinese(answer):
-                            error_msg = f"翻译结果包含中文字符 - {desc} - 检测到的中文字符内容: {answer[:100]}..."
-                            self.translation_logger.error(error_msg)
-                            raise TranslationError(f"翻译结果包含中文字符，翻译失败。检测到的中文字符内容: {answer[:100]}...")
-                        
-                        current_translation.append(answer)
-                        if "metadata" in data:
-                            metadata = data["metadata"]
-                            if "usage" in metadata:
-                                usage = metadata["usage"]
-                                # Accumulate usage data
-                                cumulative_usage["prompt_tokens"] += int(usage.get("prompt_tokens", 0))
-                                cumulative_usage["completion_tokens"] += int(usage.get("completion_tokens", 0))
-                                cumulative_usage["total_tokens"] = cumulative_usage["prompt_tokens"] + cumulative_usage["completion_tokens"]
-                                cumulative_usage["prompt_price"] += float(usage.get("prompt_price", 0))
-                                cumulative_usage["completion_price"] += float(usage.get("completion_price", 0))
-                                cumulative_usage["total_price"] += float(usage.get("total_price", 0))
-                        pbar.update(1)
-                    elif "error" in data:
-                        error_msg = f"API错误 - {desc} - 错误信息: {data['error']}"
-                        self.translation_logger.error(error_msg)
-                        raise TranslationError(f"API error: {data['error']}")
+                if chunk_count % 10 == 0:
+                    self.translation_logger.info(f"翻译进度 - {desc} - 已翻译: {chunk_count} chunks - 速度: {chunks_per_second:.1f} chunks/s - 耗时: {elapsed:.1f}s")
                 
-                # merge current translation result, handle possible overlap
-                current_text = "".join(current_translation)
+                if position in self.progress_bars and self.current_tasks.get(position) == current_task:
+                    status = f"{desc} [{chunk_count} chunks, {chunks_per_second:.1f} chunks/s, {elapsed:.1f}s]"
+                    self.progress_bars[position].set_description(status)
+                    self.progress_bars[position].update(1)
                 
-                if full_translation:
-                    # find overlap
-                    last_part = full_translation[-1][-100:]  # use last 100 characters for overlap search
-                    overlap_start = current_text.find(last_part)
-                    
-                    if overlap_start != -1:
-                        # if overlap found, only add new content after overlap
-                        current_text = current_text[overlap_start + len(last_part):]
-                
-                full_translation.append(current_text)
-                
-                last_metadata = {}
-                if metadata:
-                    last_metadata = metadata.copy()
-                    if "usage" in metadata:
-                        # Replace the final usage data with cumulative totals
-                        last_metadata['usage'] = cumulative_usage
-                
-                if not reached_token_limit:
-                    break
-                    
-                # print("\nReached token limit, continuing translation...")
+                break
             
-            # 最终检查完整的翻译结果是否包含中文字符（如果启用了检测）
             final_translation = "".join(full_translation)
+            
             if self.check_chinese and self._contains_chinese(final_translation):
                 error_msg = f"最终翻译结果包含中文字符 - {desc} - 检测到的中文字符内容: {final_translation[:200]}..."
                 self.translation_logger.error(error_msg)
                 raise TranslationError(f"最终翻译结果包含中文字符，翻译失败。检测到的中文字符内容: {final_translation[:200]}...")
             
-            # Calculate total translation time
             total_time = (datetime.now() - start_time).total_seconds()
             
-            # Update final status only if this is still the current task for this worker
             if position in self.progress_bars and self.current_tasks.get(position) == current_task:
                 final_status = f"{desc} [Done in {total_time:.1f}s, {chunk_count} chunks]"
                 self.progress_bars[position].set_description(final_status)
                 self.progress_bars[position].refresh()
             
-            # Add translation time to metadata
-            if last_metadata:
-                last_metadata['translation_time'] = round(total_time, 2)  # Round to 2 decimal places
+            last_metadata = {
+                'usage': cumulative_usage,
+                'translation_time': round(total_time, 2)
+            }
             
-            # 记录翻译成功
             self.translation_logger.info(f"翻译完成 - {desc} - 耗时: {total_time:.1f}s - 总chunks: {chunk_count} - 总tokens: {cumulative_usage['total_tokens']}")
             
             return final_translation, last_metadata
                 
         except Exception as e:
-            # 记录翻译失败
             error_msg = f"翻译失败 - {desc} - 错误信息: {str(e)}"
             self.translation_logger.error(error_msg)
             
