@@ -16,6 +16,8 @@ import threading
 
 _worker_pbars: Dict[int, Optional[tqdm]] = {}
 _pbar_lock = threading.Lock()
+_completed_count = 0
+_error_count = 0
 
 @click.command()
 @click.option('--source', required=True, type=click.Path(exists=True), help='The source document directory')
@@ -331,6 +333,9 @@ def translate(source: str, target: str,
                     f.write("\n\n")
 
     # 并行执行翻译
+    global _completed_count, _error_count
+    _completed_count = 0
+    _error_count = 0
     success_count = 0
     error_count = 0
     
@@ -369,12 +374,13 @@ def translate(source: str, target: str,
             cache_manager=cache_manager
         )
         
-        def worker_process_files(worker_id: int, files: list):
+        def worker_process_files(worker_id: int, files: list, main_pbar: tqdm, total_files_count: int):
             """Worker processes its assigned files sequentially"""
             local_success = 0
             local_error = 0
             total_files = len(files)
             for current_file_num, source_file in enumerate(files, 1):
+                result = False
                 try:
                     result = process_func(
                         source_file=source_file, 
@@ -389,14 +395,25 @@ def translate(source: str, target: str,
                 except Exception as e:
                     logging.error(f"Worker {worker_id} 处理文件 {source_file} 异常: {e}")
                     local_error += 1
+                
+                # Update total progress after each file
+                with _pbar_lock:
+                    global _completed_count, _error_count
+                    _completed_count += 1 if result else 0
+                    _error_count += 0 if result else 1
+                    main_pbar.set_description(
+                        f"Total: {total_files_count} files | Completed: {_completed_count} | Failed: {_error_count} | Cached: 0 paras"
+                    )
+                    main_pbar.update(1)
             return local_success, local_error
         
         futures = []
+        total_files_count = len(files_to_translate_exclude_translated)
         for worker_id, files in worker_tasks.items():
-            future = executor.submit(worker_process_files, worker_id, files)
+            future = executor.submit(worker_process_files, worker_id, files, main_pbar, total_files_count)
             futures.append(future)
         
-        # Monitor completion
+        # Monitor completion - just wait for all workers to finish
         for future in concurrent.futures.as_completed(futures):
             try:
                 local_success, local_error = future.result()
@@ -405,12 +422,6 @@ def translate(source: str, target: str,
             except Exception as e:
                 logging.error(f"Worker 执行异常: {e}")
                 error_count += 1
-            
-            with _pbar_lock:
-                main_pbar.set_description(
-                    f"Total: {len(files_to_translate_exclude_translated)} files | Completed: {success_count} | Failed: {error_count} | Cached: 0 paras"
-                )
-                main_pbar.update(success_count + error_count - main_pbar.n)
         
         main_pbar.clear()
         main_pbar.close()
