@@ -10,135 +10,7 @@ import logging
 import re
 import time
 from openai import OpenAI
-
-TRANSLATION_SYSTEM_PROMPT = """<instruction>
-根据提供的文档内容和目标语言，将给定的Markdown或YAML格式的文本翻译成指定的语言。确保翻译过程中保留原始格式不变，包括但不限于标题、列表、链接等元素。
-1. 输出结果不应包含任何XML标签。
-2. 输出结果不要添加任何额外的标记，如把整个 Markdown 或 YAML 内容包含在代码块标记中。
-3. 关键要求：**必须使用纯目标语言的标点符号**，具体规范：
-    * 逗号请使用英文半角逗号 `,` ，而非中文全角逗号 `，`
-    * 句号请使用英文半角句号 `.` ，而非中文全角句号 `。`
-    * 引号请使用 `" "` 或 `' '`，而非 `“ ”` 或 `‘ ’`
-    * 括号请使用 `( )` 或 `[ ]`，而非 `（ ）` 或 `【 】`
-    * 其他所有标点符号（如冒号、分号、问号、感叹号等）也请遵循此规则，使用英文半角格式。
-4. 当我告诉你 "请继续翻译" 时，请继续前一次未完成的翻译，继续翻译的结果，请不要添加额外的代码块等标记，也不要添加额外的翻译结果之外的内容。
-5. 输入内容中被 <<< >>> 标记的为模板变量，请不要翻译，原样保留。
-6. 所有单独的一个中文名词，英语翻译结果请都使用复数形式。
-7. 原样保留原文中所有的 markdown 注释以及 HTML 标记语法、空行，不要做任何删减，如 、<front></front> 等，但对于代码块中的注释，请翻译为目标语言。
-8. 请不要添加与扩展任何额外的内容，完全遵守原文，翻译成目标语言内容。
-9. markdown 有序项目编号，请全部使用 "1. "， 编号不要自增。
-
-1. **专用名词翻译**：
-   - 使用以下预置词典进行专用名词的翻译：
-      - 观测云: Guance
-      - 应用性能监测: APM
-      - 用户访问监测: RUM
-      - 体验版: Free Plan
-      - 商业版: Commercial Plan
-      - 部署版: Deployment Plan
-      - 专属版: Exclusive Plan
-      - 指标: Metrics
-      - 指标集: Measurement
-      - 资源目录: Resource Catalog
-      - 资源分类: Resource Class
-      - 时间线: Time Series
-      - 排行榜: Top List
-      - 查看器: Explorer
-      - 异常追踪: Incident
-      - 总览: Summary
-      - 静默: Mute
-      - 服务清单: Service List
-      - 服务拓扑: Service Map
-      - 顶层 Span: Top Span
-      - 服务顶层 Span: Service Entry Span
-      - 页面: View
-      - 操作: Action
-      - 用户洞察: User Analysis
-      - 可用性监测: Synthetic Tests
-      - 自建节点: Self-built Nodes
-      - 安全巡检: Security Check
-      - 可用性数据检测: Synthetic Testing Anomaly Detection
-      - 通知对象管理: Notification Targets
-      - DataFlux Func 托管版: DataFlux Func (Automata)
-      - 作战室: Warroom
-      - 个人设置: User Settings
-      - 属性声明: Attribute Claims
-      - 危险操作: Risky Operations
-      - 任务调用: Triggers
-      - API 拨测: API Tests
-      - 多步拨测: Multistep Tests
-      - 服务费: Service Charges
-      - 快捷入口: Shortcut
-      - 空间管理: Workspace Management
-      - 安全断言标记语言: SAML
-      - 存在: Exist
-      - 不存在: Not exist
-      - 智能巡检: Intelligent Inspection
-      - 概念先解: Concepts
-      - 开始新建: Create
-      - 新建规则: Create
-      - 新建通知策略: Create
-      - 新建日程: Create
-      - 新建频道: Create
-      - 新建 Issue: Create
-      - 新建索引: Create
-      - 新建标签: Create
-      - 新建查看器: Create
-      - 新增字段: Create
-      - 新建追踪: Create 
-      - 新建节点: Create
-      - 管理策略: Manage
-      - 管理 Issue: Manage
-      - 管理索引: Manage
-      - 管理标签: Manage
-      - 管理查看器: Manage
-      - 节点管理: Manage
-      - 管理节点: Manage
-      - 管理规则: Manage Rules
-      - 规则管理: Manage Rules
-      - 管理策略列表: Manage Rules
-      - 功能介绍: Features
-      - 功能模块: Features
-      - 聚类分析: Pattern
-      - 开始配置: Configure
-      - 概览: Overview
-      - 版本说明: Plans
-      - 付费计划与账单 Billing
-      - 费用中心账号: Billing Center account
-      - 观测云费用中心 Guance Billing Center
-      - 用户访问 PV RUM PV
-      - 相关配置/配置步骤: Configuration
-      - 列表操作/相关操作: Options
-      - 时间控件: Time Widget
-      - 使用场景: Use Cases
-      - 适用场景: Use Cases
-      - 使用范围: Use Cases
-      - 飞书: Lark
-      - 告警策略管理: Alert Strategies
-      - 通知对象管理: Notification Targets
-      - 企业微信: WeCom
-      - 批量操作: Batch operations
-      - 阿里云: Alibaba Cloud
-      - 腾讯云: Tencent Cloud
-      - 华为云: Huawei Cloud
-      - 火山引擎: Volcengine
-      - 谷歌云: GCP
-      - 中间件: MIDDLEWARE
-      - 主机: HOST
-      - 容器: CONTAINERS
-      - 网络: NETWORK
-      - 缓存: CACHING
-      - 消息队列: MESSAGE QUEUES
-      - 数据库: DATABASE
-      - 语言: LANGUAGE
-      - 链路追踪: APM
-      - 日志: LOG
-      - 拨测: TESTING
-      - 移动端: MOBILE
-      - 会话重放: SESSION REPLAY
-   - 确保这些专用名词在翻译时严格按照词典处理。
-
-</instruction>"""
+from .prompts import TRANSLATION_SYSTEM_PROMPT
 
 MAX_RETRIES = 3
 REQUEST_TIMEOUT = 120
@@ -241,7 +113,7 @@ class DocumentTranslator:
         
         return pbar
 
-    def _call_llm_api(self, messages: List[Dict], is_continuation: bool = False, position: int = 0, desc: str = "Translating") -> Tuple[str, Dict]:
+    def _call_llm_api(self, messages: List[Dict], is_continuation: bool = False, position: int = 0, desc: str = "Translating", stream_callback: Optional[callable] = None) -> Tuple[str, Dict]:
         """
         Call LLM API with retry mechanism and timeout control.
         
@@ -250,6 +122,7 @@ class DocumentTranslator:
             is_continuation: Whether this is a continuation request
             position: The position for the progress bar
             desc: Description for the progress bar
+            stream_callback: Optional callback function for streaming updates (receives chunk_text)
             
         Returns:
             The response content and usage metadata
@@ -262,6 +135,9 @@ class DocumentTranslator:
                     self.translation_logger.info(f"重试第 {attempt + 1}/{MAX_RETRIES} 次 - 继续翻译 - {desc}")
                 else:
                     self.translation_logger.info(f"重试第 {attempt + 1}/{MAX_RETRIES} 次 - 翻译请求 - {desc}")
+                
+                if self.response_mode == "streaming" and stream_callback:
+                    return self._call_llm_api_streaming(messages, position, desc, stream_callback)
                 
                 response = self.client.chat.completions.with_raw_response.create(
                     model=self.model,
@@ -294,6 +170,88 @@ class DocumentTranslator:
                 
             except Exception as e:
                 error_msg = f"API调用异常 - {desc} - 错误信息: {str(e)}"
+                self.translation_logger.error(error_msg)
+                last_error = str(e)
+                time.sleep(2 ** attempt)
+                continue
+        
+        raise TranslationError(f"API调用失败，已达最大重试次数 {MAX_RETRIES}: {last_error}")
+
+    def _call_llm_api_streaming(self, messages: List[Dict], position: int, desc: str, stream_callback: callable) -> Tuple[str, Dict]:
+        """
+        Call LLM API with streaming mode for real-time progress updates.
+        
+        Args:
+            messages: The messages to send to the API
+            position: The position for the progress bar
+            desc: Description for the progress bar
+            stream_callback: Callback function for streaming updates
+            
+        Returns:
+            The response content and usage metadata
+        """
+        last_error = None
+        
+        for attempt in range(MAX_RETRIES):
+            try:
+                self.translation_logger.info(f"重试第 {attempt + 1}/{MAX_RETRIES} 次 - 流式翻译请求 - {desc}")
+                
+                response = self.client.chat.completions.with_raw_response.create(
+                    model=self.model,
+                    messages=messages,
+                    temperature=0.1,
+                    timeout=REQUEST_TIMEOUT,
+                    stream=True
+                )
+                
+                if response.status_code != 200:
+                    error_msg = f"API请求失败 - {desc} - 状态码: {response.status_code} - 响应: {response.text}"
+                    self.translation_logger.error(error_msg)
+                    last_error = f"API request failed with status code {response.status_code}: {response.text}"
+                    time.sleep(2 ** attempt)
+                    continue
+                
+                full_content = []
+                chunk_count = 0
+                
+                for chunk in response.parse():
+                    if chunk.choices and len(chunk.choices) > 0:
+                        delta = chunk.choices[0].delta
+                        if delta and delta.content:
+                            content_piece = delta.content
+                            full_content.append(content_piece)
+                            chunk_count += 1
+                            stream_callback(content_piece, chunk_count)
+                
+                content = "".join(full_content)
+                
+                usage = None
+                if hasattr(response, '_response') and response._response is not None:
+                    if hasattr(response._response, 'headers'):
+                        usage_data = {
+                            "prompt_tokens": 0,
+                            "completion_tokens": 0,
+                            "total_tokens": 0
+                        }
+                    else:
+                        usage_data = {
+                            "prompt_tokens": 0,
+                            "completion_tokens": 0,
+                            "total_tokens": 0
+                        }
+                else:
+                    usage_data = {
+                        "prompt_tokens": 0,
+                        "completion_tokens": 0,
+                        "total_tokens": 0
+                    }
+                
+                self.translation_logger.info(f"API流式调用成功 - {desc} - chunks: {chunk_count}")
+                
+                return content, usage_data
+                
+            except Exception as e:
+                error_msg = f"API流式调用异常 - {desc} - 错误信息: {str(e)}"
                 self.translation_logger.error(error_msg)
                 last_error = str(e)
                 time.sleep(2 ** attempt)
@@ -349,11 +307,26 @@ class DocumentTranslator:
                     ]
                     self.translation_logger.info(f"继续翻译请求 - {desc}")
                 
+                def stream_callback(chunk_text: str, current_chunk_count: int):
+                    nonlocal chunk_count
+                    chunk_count = current_chunk_count
+                    elapsed = (datetime.now() - start_time).total_seconds()
+                    chunks_per_second = chunk_count / elapsed if elapsed > 0 else 0
+                    
+                    if chunk_count % 10 == 0:
+                        self.translation_logger.info(f"翻译进度 - {desc} - 已翻译: {chunk_count} chunks - 速度: {chunks_per_second:.1f} chunks/s - 耗时: {elapsed:.1f}s")
+                    
+                    if position in self.progress_bars and self.current_tasks.get(position) == current_task:
+                        status = f"{desc} [{chunk_count} chunks, {chunks_per_second:.1f} chunks/s, {elapsed:.1f}s]"
+                        self.progress_bars[position].set_description(status)
+                        self.progress_bars[position].update(1)
+                
                 current_translation, usage_data = self._call_llm_api(
                     messages, 
                     is_continuation=bool(full_translation),
                     position=position,
-                    desc=desc
+                    desc=desc,
+                    stream_callback=stream_callback
                 )
                 
                 cumulative_usage["prompt_tokens"] += usage_data["prompt_tokens"]
@@ -366,7 +339,6 @@ class DocumentTranslator:
                     raise TranslationError(f"翻译结果包含中文字符，翻译失败。检测到的中文字符内容: {current_translation[:100]}...")
                 
                 full_translation.append(current_translation)
-                chunk_count += 1
                 elapsed = (datetime.now() - start_time).total_seconds()
                 chunks_per_second = chunk_count / elapsed if elapsed > 0 else 0
                 
