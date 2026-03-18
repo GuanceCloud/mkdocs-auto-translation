@@ -1,10 +1,7 @@
 import os
 from pathlib import Path
 from typing import Optional, Dict, List, Tuple
-import requests
-import json
 from tqdm import tqdm
-import hashlib
 from datetime import datetime
 import logging
 import re
@@ -18,14 +15,12 @@ REQUEST_TIMEOUT = 120
 class DocumentTranslator:
     """The main class for handling document translation."""
     
-    def __init__(self, target_lang: str, user: str = "default_user", query: str = "请将 input_content 中的内容翻译为指定的目标语言。", response_mode: str = "streaming", api_key: Optional[str] = None, check_chinese: bool = False, check_line_count: bool = False, base_url: Optional[str] = None, model: str = "gpt-4o"):
+    def __init__(self, target_lang: str, response_mode: str = "streaming", api_key: Optional[str] = None, check_chinese: bool = False, check_line_count: bool = False, base_url: Optional[str] = None, model: str = "gpt-4o"):
         """
         Initialize the translator.
         
         Args:
             target_lang: The target language code
-            user: The user name
-            query: The query string
             response_mode: The response mode, optional values are "streaming" or "blocking".
             api_key: The LLM API key (compatible with OpenAI format)
             check_chinese: Whether to check if translation results contain Chinese characters
@@ -34,8 +29,6 @@ class DocumentTranslator:
             model: The model name to use (default: gpt-4o)
         """
         self.target_lang = target_lang
-        self.user = user
-        self.query = query
         self.response_mode = response_mode
         self.api_key = api_key or os.getenv('OPENAI_API_KEY')
         if not self.api_key:
@@ -49,7 +42,6 @@ class DocumentTranslator:
         self.progress_bars = {}
         self.active_positions = set()
         self.current_tasks = {}
-        self.max_workers = None
         self.check_chinese = check_chinese
         self.check_line_count = check_line_count
         
@@ -225,26 +217,11 @@ class DocumentTranslator:
                 
                 content = "".join(full_content)
                 
-                usage = None
-                if hasattr(response, '_response') and response._response is not None:
-                    if hasattr(response._response, 'headers'):
-                        usage_data = {
-                            "prompt_tokens": 0,
-                            "completion_tokens": 0,
-                            "total_tokens": 0
-                        }
-                    else:
-                        usage_data = {
-                            "prompt_tokens": 0,
-                            "completion_tokens": 0,
-                            "total_tokens": 0
-                        }
-                else:
-                    usage_data = {
-                        "prompt_tokens": 0,
-                        "completion_tokens": 0,
-                        "total_tokens": 0
-                    }
+                usage_data = {
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0
+                }
                 
                 self.translation_logger.info(f"API流式调用成功 - {desc} - chunks: {chunk_count}")
                 

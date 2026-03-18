@@ -17,8 +17,6 @@ from fnmatch import fnmatch
 @click.option('--api-key', help='LLM API key (compatible with OpenAI format)')
 @click.option('--base-url', help='LLM API base URL (default: https://api.openai.com/v1)')
 @click.option('--model', help='Model name to use', default='gpt-4o')
-@click.option('--user', help='User name')
-@click.option('--query', help='Query string', default='请将 input_content 中的内容翻译为指定的目标语言。')
 @click.option('--response-mode', help='Response mode', type=click.Choice(['streaming', 'blocking']), default='streaming')
 @click.option('--workers', type=int, default=1, help='Number of parallel workers')
 @click.option('--overwrite-resources', is_flag=True, default=False, help='Whether to overwrite resource files in target directory')
@@ -27,7 +25,7 @@ from fnmatch import fnmatch
 @click.option('--check-line-count', is_flag=True, default=False, help='Whether to check if line count difference between source and translated files exceeds 5%')
 def translate(source: str, target: str,
              target_language: str, api_key: Optional[str], base_url: Optional[str], model: str,
-             user: Optional[str], query: Optional[str], response_mode: str, workers: int,
+             response_mode: str, workers: int,
              overwrite_resources: bool, delete_removed_resources: bool, check_chinese: bool, check_line_count: bool):
     """Translate MkDocs documents"""
     # set log module
@@ -48,8 +46,6 @@ def translate(source: str, target: str,
     # Initialize components
     translator = DocumentTranslator(
         target_language, 
-        user=user or "default_user", 
-        query=query, 
         response_mode=response_mode, 
         api_key=api_key, 
         check_chinese=check_chinese, 
