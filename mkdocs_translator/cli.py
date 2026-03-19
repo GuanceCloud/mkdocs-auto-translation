@@ -40,7 +40,7 @@ def translate(source: str, target: str,
     # set log module
     logging.basicConfig(
         filename='translation.log',
-        level=logging.DEBUG,
+        level=logging.INFO,
         format='%(asctime)s - %(levelname)s - %(message)s'
     )
     
