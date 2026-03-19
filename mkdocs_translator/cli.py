@@ -381,12 +381,10 @@ def translate(source: str, target: str,
                 logging.error(f"Worker 执行异常: {e}")
                 error_count += 1
         
-        main_pbar.clear()
-        main_pbar.close()
-        
-        # Close all worker progress bars
+        # Close all worker progress bars first (in order)
         with _pbar_lock:
-            for worker_id, pbar in list(_worker_pbars.items()):
+            for worker_id in sorted(_worker_pbars.keys()):
+                pbar = _worker_pbars[worker_id]
                 if pbar is not None:
                     try:
                         pbar.close()
@@ -394,13 +392,11 @@ def translate(source: str, target: str,
                         pass
             _worker_pbars.clear()
         
+        # Close main progress bar last to keep it at the bottom
+        main_pbar.close()
+        
         # 记录翻译任务完成
         logging.info(f"翻译任务完成 - 成功: {success_count} 文件 - 失败: {error_count} 文件")
-        
-        click.echo('\n' * (workers + 1))
-        click.echo(f"Translation completed!")
-        click.echo(f"Success: {success_count} files")
-        click.echo(f"Failed: {error_count} files")
 
 if __name__ == '__main__':
     translate() 
