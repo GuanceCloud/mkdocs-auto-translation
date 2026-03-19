@@ -160,6 +160,12 @@ def translate(source: str, target: str,
                 if all_cached:
                     logging.info(f"文档未变化，使用缓存 - {relative_path}")
                     
+                    current_para_hashes = [p.content_hash for p in paragraphs]
+                    removed_count = cache_manager.cleanup_stale_paragraphs(cache, current_para_hashes)
+                    if removed_count > 0:
+                        logging.info(f"清理了 {removed_count} 个过期段落缓存 - {relative_path}")
+                        cache_manager.save_cache(relative_path, cache)
+                    
                     with _pbar_lock:
                         pbar = _worker_pbars.get(worker_id)
                         if pbar is None:
@@ -272,6 +278,12 @@ def translate(source: str, target: str,
 
             cache.source_doc_hash = doc_hash
             cache.last_translated = datetime.now().isoformat()
+            
+            current_para_hashes = [p.content_hash for p in paragraphs]
+            removed_count = cache_manager.cleanup_stale_paragraphs(cache, current_para_hashes)
+            if removed_count > 0:
+                logging.info(f"清理了 {removed_count} 个过期段落缓存 - {relative_path}")
+            
             cache_manager.save_cache(relative_path, cache)
 
             logging.info(f"文件翻译成功 - {relative_path}")

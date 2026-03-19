@@ -164,6 +164,9 @@ class CacheManager:
 
     def extract_terms_from_similar(self, source_text: str, translation: str) -> List[Tuple[str, str]]:
         """从相似段落中提取术语对照，返回 [(中文术语, 英文术语), ...]"""
+
+    def cleanup_stale_paragraphs(self, cache_data: CacheData, current_paragraph_hashes: List[str]) -> int:
+        """清理缓存中已不在当前文档的段落，返回清理数量"""
 ```
 
 **相似度算法**：使用编辑距离（Levenshtein），阈值 60%
@@ -178,6 +181,14 @@ class CacheManager:
    - 识别中文文本片段（2-20字）
    - 查找中文片段后紧跟的英文单词
    - 最多提取 10 个术语对
+
+**过期缓存清理**：
+
+每次文档翻译完成后，清理缓存中已不在当前文档的段落：
+
+1. **触发时机**：文档翻译完成后，保存缓存前
+2. **清理逻辑**：比对当前文档所有段落 hash，删除不在列表中的缓存段落
+3. **目的**：避免缓存文件持续膨胀，保持缓存与文档内容一致
 
 ---
 
@@ -377,7 +388,7 @@ def needs_translation(source_file: Path, cache_manager: CacheManager) -> bool:
 | 段落内容有变更 | hash 不存在，翻译新段落 |
 | 段落有变更 + 相似匹配 | hash 不存在，从相似段落提取术语添加到术语表，再翻译 |
 | 新增段落 | 新 hash，翻译并新增缓存 |
-| 删除段落 | 缓存保留，不影响其他段落 |
+| 删除段落 | 翻译完成后自动清理对应的段落缓存 |
 | 段落顺序变化 | 按当前顺序组装，hash 匹配到正确位置 |
 | 代码块 | 作为整体段落翻译，LLM 保持代码不变 |
 | LLM 翻译失败 | 记录错误日志，该段落不写入缓存 |

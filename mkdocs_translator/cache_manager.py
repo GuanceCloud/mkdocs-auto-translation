@@ -81,6 +81,25 @@ class CacheManager:
         with open(cache_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
 
+    def cleanup_stale_paragraphs(self, cache_data: CacheData, current_paragraph_hashes: List[str]) -> int:
+        """
+        Remove cached paragraphs that no longer exist in the current document.
+        
+        Args:
+            cache_data: The cache data to clean up
+            current_paragraph_hashes: List of paragraph hashes from the current document
+            
+        Returns:
+            Number of removed stale paragraphs
+        """
+        current_hash_set = set(current_paragraph_hashes)
+        stale_hashes = [h for h in cache_data.paragraphs.keys() if h not in current_hash_set]
+        
+        for stale_hash in stale_hashes:
+            del cache_data.paragraphs[stale_hash]
+        
+        return len(stale_hashes)
+
     def get_paragraph_translation(self, cache_data: CacheData, para_hash: str) -> Optional[str]:
         if para_hash in cache_data.paragraphs:
             return cache_data.paragraphs[para_hash].translation
