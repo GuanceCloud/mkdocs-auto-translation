@@ -4,7 +4,6 @@ from typing import Optional, List, Tuple, Dict
 import logging
 from datetime import datetime
 from .translator import DocumentTranslator
-from .metadata import MetadataManager
 from .utils import get_translatable_files, copy_resources, load_blacklist
 from .parser import parse_file_incremental, compute_doc_hash, is_pages_file
 from .cache_manager import CacheManager, CacheData
@@ -47,13 +46,9 @@ def translate(source: str, target: str,
     
     source_path = Path(source)
     target_path = Path(target)
-    metadata_path = source_path / 'metadata.json'
-    last_metadata_path = source_path / 'last-metadata.json'
     blacklist_file = source_path / '.translate-blacklist'
-    # Load blacklist
     blacklist = load_blacklist(blacklist_file)
     
-    # Initialize components
     translator = DocumentTranslator(
         target_language, 
         response_mode=response_mode, 
@@ -63,8 +58,6 @@ def translate(source: str, target: str,
         base_url=base_url,
         model=model
     )
-    metadata_manager = MetadataManager(metadata_path, source_path)
-    last_metadata_manager = MetadataManager(last_metadata_path, source_path)
     cache_manager = CacheManager(target_path)
     
     def is_blacklisted(file_path: str, blacklist: set) -> bool:
@@ -92,76 +85,52 @@ def translate(source: str, target: str,
     files_to_translate = [f for f in get_translatable_files(source_path) 
                          if not is_blacklisted(str(f.relative_to(source_path)), blacklist)]
 
-    # get files to translate that are not translated
-    files_to_translate_exclude_translated = [f for f in files_to_translate if metadata_manager.needs_translation(f.relative_to(source_path))]
+    def needs_translation(source_file: Path, cache_manager: CacheManager) -> bool:
+        """
+        Check if a file needs translation based on cache.
+        
+        Args:
+            source_file: The source file path
+            cache_manager: The cache manager instance
+            
+        Returns:
+            bool: True if the file needs translation, False otherwise
+        """
+        relative_path = source_file.relative_to(source_path)
+        cache = cache_manager.load_cache(relative_path)
+        
+        if cache is None:
+            return True
+        
+        is_pages = is_pages_file(source_file)
+        paragraphs = parse_file_incremental(source_file, is_pages)
+        doc_hash = compute_doc_hash(paragraphs)
+        
+        if cache.source_doc_hash != doc_hash:
+            return True
+        
+        for para in paragraphs:
+            if para.content_hash not in cache.paragraphs:
+                return True
+            cached_para = cache.paragraphs[para.content_hash]
+            if cached_para.source_content != para.content:
+                return True
+        
+        return False
+
+    files_to_translate_exclude_translated = [f for f in files_to_translate if needs_translation(f, cache_manager)]
 
     # Create target directory
     target_path.mkdir(parents=True, exist_ok=True)
     
     # Copy resource files
     copy_resources(source_path, target_path, overwrite_resources=overwrite_resources, delete_removed_resources=delete_removed_resources)
-    
-    # clear last metadata
-    last_metadata_manager.clear_metadata()
-
-    def process_file(source_file, translator, target_path, source_path, metadata_manager, 
-                    last_metadata_manager, worker_id, worker_tasks_count):
-        relative_path = source_file.relative_to(source_path)
-        target_file = target_path / relative_path
-        
-        # Get total files for this worker and calculate current file number
-        total_files = len(worker_tasks_count[worker_id])
-        current_file_num = worker_tasks_count[worker_id].index(source_file) + 1
-        
-        try:
-            success, translated_metadata = translator.translate_file(
-                source_file, 
-                target_file,
-                position=worker_id,
-                desc=f"Worker {worker_id + 1}: {relative_path}",
-                current_file=current_file_num,
-                total_files=total_files
-            )
-            
-            if success:
-                # Update both metadata files with translation time
-                if translated_metadata and 'translation_time' in translated_metadata:
-                    metadata_manager.update_file_status(relative_path, True, {'translation_time': translated_metadata['translation_time']})
-                    last_metadata_manager.update_file_status(relative_path, True, translated_metadata)
-                    logging.info(f"文件翻译成功并更新metadata - {relative_path} - 翻译时间: {translated_metadata['translation_time']}s")
-                else:
-                    metadata_manager.update_file_status(relative_path, True)
-                    last_metadata_manager.update_file_status(relative_path, True, translated_metadata)
-                    logging.info(f"文件翻译成功并更新metadata - {relative_path}")
-                return True
-            else:
-                # 翻译失败但没有异常
-                error_metadata = {'error_message': 'Translation failed without specific error'}
-                metadata_manager.update_file_status(relative_path, False, error_metadata)
-                last_metadata_manager.update_file_status(relative_path, False, error_metadata)
-                logging.error(f"文件翻译失败（无具体错误） - {relative_path}")
-                return False
-                
-        except Exception as e:
-            # 捕获翻译过程中的异常
-            error_message = str(e)
-            logging.error(f"翻译文件 {relative_path} 时发生异常: {error_message}")
-            print(f"翻译文件 {relative_path} 时发生错误: {error_message}")
-            
-            # 记录失败情况到两个metadata文件中
-            error_metadata = {'error_message': error_message}
-            metadata_manager.update_file_status(relative_path, False, error_metadata)
-            last_metadata_manager.update_file_status(relative_path, False, error_metadata)
-            
-            return False
 
     def process_file_incremental(
         source_file: Path,
         translator: DocumentTranslator,
         target_path: Path,
         source_path: Path,
-        metadata_manager: MetadataManager,
-        last_metadata_manager: MetadataManager,
         cache_manager: CacheManager,
         worker_id: int,
         current_file_num: int = 1,
@@ -210,8 +179,6 @@ def translate(source: str, target: str,
                         pbar.update(1)
                     
                     _assemble_from_cache(paragraphs, cache, target_file)
-                    metadata_manager.update_file_status(relative_path, True, {'translation_time': 0})
-                    last_metadata_manager.update_file_status(relative_path, True, {'translation_time': 0})
                     return True
 
             need_translate = []
@@ -307,12 +274,6 @@ def translate(source: str, target: str,
             cache.last_translated = datetime.now().isoformat()
             cache_manager.save_cache(relative_path, cache)
 
-            metadata_manager.update_file_status(
-                relative_path, True,
-                {'translation_time': translated_metadata.get('translation_time', 0)}
-            )
-            last_metadata_manager.update_file_status(relative_path, True, translated_metadata)
-
             logging.info(f"文件翻译成功 - {relative_path}")
             return True
 
@@ -320,11 +281,6 @@ def translate(source: str, target: str,
             error_message = str(e)
             logging.error(f"增量翻译文件 {relative_path} 时发生异常: {error_message}")
             print(f"翻译文件 {relative_path} 时发生错误: {error_message}")
-
-            error_metadata = {'error_message': error_message}
-            metadata_manager.update_file_status(relative_path, False, error_metadata)
-            last_metadata_manager.update_file_status(relative_path, False, error_metadata)
-
             return False
 
     def _assemble_from_cache(paragraphs, cache, target_file):
@@ -373,8 +329,6 @@ def translate(source: str, target: str,
             translator=translator,
             target_path=target_path,
             source_path=source_path,
-            metadata_manager=metadata_manager,
-            last_metadata_manager=last_metadata_manager,
             cache_manager=cache_manager
         )
         
