@@ -18,6 +18,7 @@ _worker_pbars: Dict[int, Optional[tqdm]] = {}
 _pbar_lock = threading.Lock()
 _completed_count = 0
 _error_count = 0
+logger = logging.getLogger(__name__)
 
 @click.command()
 @click.option('--source', required=True, type=click.Path(exists=True), help='The source document directory')
@@ -40,7 +41,7 @@ def translate(source: str, target: str,
     # set log module
     logging.basicConfig(
         filename='translation.log',
-        level=logging.INFO,
+        level=logging.DEBUG,
         format='%(asctime)s - %(levelname)s - %(message)s'
     )
     
@@ -222,9 +223,13 @@ def translate(source: str, target: str,
 
                 similar = cache_manager.find_similar_paragraph(para.content, cache, 0.6)
                 if similar:
-                    need_translate.append((para, similar[0]))
-                else:
-                    need_translate.append((para, None))
+                    ref_source, ref_translation, similarity = similar
+                    extracted_terms = cache_manager.extract_terms_from_similar(ref_source, ref_translation)
+                    for chinese_term, english_term in extracted_terms:
+                        cache_manager.update_translation_memory(cache, chinese_term, english_term)
+                    logger.debug(f"从相似段落提取了 {len(extracted_terms)} 个术语，相似度: {similarity:.2f}")
+                
+                need_translate.append(para)
 
             total_need = len(need_translate)
             total_paragraphs = len(paragraphs)
@@ -256,14 +261,13 @@ def translate(source: str, target: str,
                     "total_tokens": 0
                 }
 
-                for idx, (para, reference) in enumerate(need_translate):
+                for idx, para in enumerate(need_translate):
                     with _pbar_lock:
                         pbar.set_description(
                             f"Worker {worker_id + 1}: ({current_file_num}/{total_files}) {relative_path.name} [p {idx+1}/{total_paragraphs}] {cache_info}"
                         )
                     translation, usage_data = translator.translate_paragraph(
                         para.content,
-                        reference=reference,
                         translation_memory=cache.translation_memory,
                         position=worker_id,
                         desc=f"{relative_path}: {para.content_hash}"

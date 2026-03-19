@@ -239,7 +239,6 @@ class DocumentTranslator:
     def translate_paragraph(
         self,
         text: str,
-        reference: Optional[str] = None,
         translation_memory: Optional[List[Dict]] = None,
         position: int = 0,
         desc: str = "Translating"
@@ -249,7 +248,6 @@ class DocumentTranslator:
 
         Args:
             text: The text to translate
-            reference: Reference translation for similar content
             translation_memory: List of terminology entries
             position: The position for the progress bar
             desc: Description for the progress bar
@@ -260,7 +258,7 @@ class DocumentTranslator:
         try:
             self.translation_logger.info(f"开始翻译段落 - {desc} - 文本长度: {len(text)} 字符")
 
-            system_prompt = self._build_enhanced_prompt(translation_memory, reference)
+            system_prompt = self._build_enhanced_prompt(translation_memory)
             user_message = self._build_user_message(text)
 
             messages = [
@@ -293,10 +291,9 @@ class DocumentTranslator:
 
     def _build_enhanced_prompt(
         self,
-        translation_memory: Optional[List[Dict]] = None,
-        reference: Optional[str] = None
+        translation_memory: Optional[List[Dict]] = None
     ) -> str:
-        """Build enhanced system prompt with terminology and reference."""
+        """Build enhanced system prompt with terminology."""
         prompt_parts = [TRANSLATION_SYSTEM_PROMPT]
 
         if translation_memory:
@@ -305,9 +302,6 @@ class DocumentTranslator:
                 for entry in translation_memory[:50]
             )
             prompt_parts.append(f"\n\n## 术语表（必须保持一致）\n{terms_text}")
-
-        if reference:
-            prompt_parts.append(f"\n\n## 参考翻译（相似段落，请保持一致的表达方式）\n{reference}")
 
         return "".join(prompt_parts)
 

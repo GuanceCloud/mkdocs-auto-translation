@@ -100,12 +100,54 @@ class CacheManager:
             paragraph_type=paragraph_type
         )
 
+    def extract_terms_from_similar(self, source_text: str, translation: str) -> List[Tuple[str, str]]:
+        """
+        Extract term pairs from similar paragraph for reference.
+        Returns list of (chinese_term, english_term) pairs.
+        """
+        import re
+        
+        terms = []
+        
+        chinese_pattern = re.compile(r'[\u4e00-\u9fff]+(?:[\u4e00-\u9fff\w\s]*[\u4e00-\u9fff])?')
+        
+        chinese_segments = chinese_pattern.findall(source_text)
+        
+        for chinese in chinese_segments:
+            if len(chinese) < 2 or len(chinese) > 20:
+                continue
+            
+            try:
+                chinese_index = source_text.index(chinese)
+                
+                remaining = source_text[chinese_index + len(chinese):]
+                next_chinese_match = chinese_pattern.search(remaining)
+                
+                if next_chinese_match:
+                    end_boundary = next_chinese_match.start()
+                    context_after = remaining[:end_boundary].strip()
+                else:
+                    context_after = remaining.strip()
+                
+                english_pattern = re.compile(r'\b([A-Z][a-z]+(?:[A-Z][a-z]+)*|[A-Z]{2,}|[a-z]+)\b')
+                english_matches = english_pattern.findall(context_after)
+                
+                if english_matches:
+                    for english in english_matches[:2]:
+                        if len(english) >= 2:
+                            terms.append((chinese.strip(), english))
+                            break
+            except ValueError:
+                continue
+        
+        return terms[:10]
+
     def find_similar_paragraph(
         self,
         content: str,
         cache_data: CacheData,
         threshold: float = 0.6
-    ) -> Optional[Tuple[str, float]]:
+    ) -> Optional[Tuple[str, str, float]]:
         if not cache_data.paragraphs:
             return None
 
@@ -116,7 +158,7 @@ class CacheManager:
             similarity = compute_similarity(content, para_cache.source_content)
             if similarity > best_similarity:
                 best_similarity = similarity
-                best_match = (para_cache.translation, similarity)
+                best_match = (para_cache.source_content, para_cache.translation, similarity)
 
         return best_match
 

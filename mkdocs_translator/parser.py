@@ -1,8 +1,11 @@
 import re
 import hashlib
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -109,6 +112,10 @@ def parse_content(content: str) -> List[Paragraph]:
     else:
         parts = [('text', content)]
 
+    logger.debug(f"[parse_content] Total parts after extraction: {len(parts)}")
+    for idx, (part_type, part_content) in enumerate(parts):
+        logger.debug(f"[parse_content] Part {idx}: type={part_type}, length={len(part_content)}")
+
     for part_type, part_content in parts:
         if part_type != 'text':
             content_hash, full_hash = compute_hash(part_content)
@@ -118,9 +125,13 @@ def parse_content(content: str) -> List[Paragraph]:
                 content=part_content,
                 paragraph_type=part_type
             ))
+            logger.debug(f"[parse_content] Added {part_type} block: hash={content_hash}, length={len(part_content)}")
         else:
             text_paragraphs = split_text_paragraphs(part_content)
-            for para_text in text_paragraphs:
+            logger.debug(f"[parse_content] Split into {len(text_paragraphs)} text paragraphs before merge")
+            text_paragraphs = merge_short_paragraphs(text_paragraphs)
+            logger.debug(f"[parse_content] After merge: {len(text_paragraphs)} text paragraphs")
+            for para_idx, para_text in enumerate(text_paragraphs):
                 if para_text.strip():
                     content_hash, full_hash = compute_hash(para_text)
                     paragraphs.append(Paragraph(
@@ -129,7 +140,9 @@ def parse_content(content: str) -> List[Paragraph]:
                         content=para_text,
                         paragraph_type='normal'
                     ))
+                    logger.debug(f"[parse_content] Added text paragraph {para_idx}: hash={content_hash}, length={len(para_text)}, preview={para_text[:50]!r}...")
 
+    logger.debug(f"[parse_content] Total paragraphs: {len(paragraphs)}")
     return paragraphs
 
 
@@ -137,6 +150,35 @@ def split_text_paragraphs(text: str) -> List[str]:
     normalized = text.replace('\r\n', '\n').replace('\r', '\n')
     parts = normalized.split('\n\n')
     return [p + '\n' if p.endswith('\n') else p for p in parts if p.strip()]
+
+
+def merge_short_paragraphs(paragraphs: List[str], min_length: int = 200) -> List[str]:
+    if not paragraphs:
+        return []
+    
+    logger.debug(f"[merge_short_paragraphs] Input: {len(paragraphs)} paragraphs, min_length={min_length}")
+    for idx, p in enumerate(paragraphs):
+        logger.debug(f"[merge_short_paragraphs] Before merge [{idx}]: length={len(p)}, preview={p[:50]!r}...")
+    
+    merged = []
+    i = 0
+    
+    while i < len(paragraphs):
+        current_para = paragraphs[i]
+        merge_count = 0
+        
+        while len(current_para) < min_length and i + 1 < len(paragraphs):
+            i += 1
+            current_para = current_para.rstrip('\n') + '\n\n' + paragraphs[i]
+            merge_count += 1
+        
+        if merge_count > 0:
+            logger.debug(f"[merge_short_paragraphs] Merged {merge_count + 1} paragraphs into one, final length={len(current_para)}")
+        merged.append(current_para)
+        i += 1
+    
+    logger.debug(f"[merge_short_paragraphs] Output: {len(merged)} paragraphs")
+    return merged
 
 
 def compute_doc_hash(paragraphs: List[Paragraph]) -> str:
