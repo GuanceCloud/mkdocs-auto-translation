@@ -109,9 +109,6 @@ def parse_content(content: str) -> List[Paragraph]:
 
 def split_text_paragraphs(text: str) -> List[str]:
     """按双换行符切分文本段落"""
-
-def merge_short_paragraphs(paragraphs: List[str], min_length: int = 200) -> List[str]:
-    """合并短段落，使用贪婪算法确保段落不少于 min_length 字符"""
 ```
 
 **块识别规则**：
@@ -123,17 +120,14 @@ def merge_short_paragraphs(paragraphs: List[str], min_length: int = 200) -> List
 | 表格 | 连续多行以 \| 开头且列数一致 | \| a \| b \| |
 | 普通段落 | 非上述类型的文本，按空行切分 | 文本内容 |
 
-**段落合并策略**：
+**段落切分策略**：
 
-为提高翻译质量和效率，对普通文本段落进行合并处理：
-
-- **最小长度阈值**：200 字符
-- **合并算法**：贪婪算法，从当前段落开始，若长度不足则依次合并后续段落，直到达到阈值或无更多段落
-- **合并分隔符**：`\n\n`（保持段落间的视觉分隔）
-- **目的**：
-  1. 减少 API 调用次数，降低开销
-  2. 提供更完整的上下文，提高翻译质量
-  3. 避免短段落翻译时信息丢失
+- **切分粒度**：按 `\n\n`（双换行符）切分普通文本段落
+- **目的**：保持细粒度缓存，避免因新增/删除段落导致整个文档缓存失效
+- **优势**：
+  1. 段落粒度细，缓存命中率高
+  2. 新增/删除内容只影响局部段落
+  3. 便于增量更新
 
 ---
 
@@ -329,7 +323,7 @@ SYSTEM_PROMPT = """你是一个专业的中文到英文技术文档翻译专家�
 
 | 文件 | 操作 | 说明 |
 |------|------|------|
-| `mkdocs_translator/parser.py` | 新增 | 文档解析器，段落拆分，块识别，段落合并 |
+| `mkdocs_translator/parser.py` | 新增 | 文档解析器，段落拆分，块识别 |
 | `mkdocs_translator/cache_manager.py` | 新增 | 缓存读写，段落匹配，相似度计算，术语提取 |
 | `mkdocs_translator/translator.py` | 修改 | 扩展支持段落级翻译和术语表注入 |
 | `mkdocs_translator/cli.py` | 修改 | 集成新翻译流程，移除 metadata.json 依赖 |
@@ -360,14 +354,7 @@ def needs_translation(source_file: Path, cache_manager: CacheManager) -> bool:
     if cache.source_doc_hash != doc_hash:
         return True
     
-    # 4. 检查段落缓存完整性
-    for para in paragraphs:
-        if para.content_hash not in cache.paragraphs:
-            return True
-        cached_para = cache.paragraphs[para.content_hash]
-        if cached_para.source_content != para.content:
-            return True
-    
+    # 4. hash 一致 → 无需翻译，直接跳过
     return False
 ```
 
@@ -473,21 +460,10 @@ Total: 50 files | Completed: 30 | Failed: 2 | Cached: 120 paras
 [parse_content] Part 0: type=text, length=150
 [parse_content] Part 1: type=code, length=80
 [parse_content] Part 2: type=text, length=200
-[parse_content] Split into 5 text paragraphs before merge
-[parse_content] After merge: 3 text paragraphs
-[parse_content] Added text paragraph 0: hash=a3f2c1, length=250, preview='# 第一章 安装\n\n本文档介绍如何安装...'
-[parse_content] Total paragraphs: 4
-```
-
-### 段落合并日志
-
-```python
-# merge_short_paragraphs 函数
-[merge_short_paragraphs] Input: 5 paragraphs, min_length=200
-[merge_short_paragraphs] Before merge [0]: length=50, preview='# 标题\n'
-[merge_short_paragraphs] Before merge [1]: length=100, preview='第一段内容...\n'
-[merge_short_paragraphs] Merged 2 paragraphs into one, final length=252
-[merge_short_paragraphs] Output: 4 paragraphs
+[parse_content] Split into 5 text paragraphs
+[parse_content] Added text paragraph 0: hash=a3f2c1, length=50, preview='# 标题\n'
+[parse_content] Added text paragraph 1: hash=b7e9d4, length=100, preview='第一段内容...\n'
+[parse_content] Total paragraphs: 5
 ```
 
 ### 相似段落匹配日志
@@ -505,5 +481,5 @@ Total: 50 files | Completed: 30 | Failed: 2 | Cached: 120 paras
 
 ---
 
-**方案版本**：v1.2  
-**最后更新**：2026-03-19
+**方案版本**：v1.3  
+**最后更新**：2026-03-20

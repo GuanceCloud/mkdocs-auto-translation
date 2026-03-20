@@ -128,9 +128,7 @@ def parse_content(content: str) -> List[Paragraph]:
             logger.debug(f"[parse_content] Added {part_type} block: hash={content_hash}, length={len(part_content)}")
         else:
             text_paragraphs = split_text_paragraphs(part_content)
-            logger.debug(f"[parse_content] Split into {len(text_paragraphs)} text paragraphs before merge")
-            text_paragraphs = merge_short_paragraphs(text_paragraphs)
-            logger.debug(f"[parse_content] After merge: {len(text_paragraphs)} text paragraphs")
+            logger.debug(f"[parse_content] Split into {len(text_paragraphs)} text paragraphs")
             for para_idx, para_text in enumerate(text_paragraphs):
                 if para_text.strip():
                     content_hash, full_hash = compute_hash(para_text)
@@ -150,35 +148,6 @@ def split_text_paragraphs(text: str) -> List[str]:
     normalized = text.replace('\r\n', '\n').replace('\r', '\n')
     parts = normalized.split('\n\n')
     return [p + '\n' if p.endswith('\n') else p for p in parts if p.strip()]
-
-
-def merge_short_paragraphs(paragraphs: List[str], min_length: int = 200) -> List[str]:
-    if not paragraphs:
-        return []
-    
-    logger.debug(f"[merge_short_paragraphs] Input: {len(paragraphs)} paragraphs, min_length={min_length}")
-    for idx, p in enumerate(paragraphs):
-        logger.debug(f"[merge_short_paragraphs] Before merge [{idx}]: length={len(p)}, preview={p[:50]!r}...")
-    
-    merged = []
-    i = 0
-    
-    while i < len(paragraphs):
-        current_para = paragraphs[i]
-        merge_count = 0
-        
-        while len(current_para) < min_length and i + 1 < len(paragraphs):
-            i += 1
-            current_para = current_para.rstrip('\n') + '\n\n' + paragraphs[i]
-            merge_count += 1
-        
-        if merge_count > 0:
-            logger.debug(f"[merge_short_paragraphs] Merged {merge_count + 1} paragraphs into one, final length={len(current_para)}")
-        merged.append(current_para)
-        i += 1
-    
-    logger.debug(f"[merge_short_paragraphs] Output: {len(merged)} paragraphs")
-    return merged
 
 
 def compute_doc_hash(paragraphs: List[Paragraph]) -> str:

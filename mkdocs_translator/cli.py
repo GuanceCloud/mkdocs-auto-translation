@@ -109,13 +109,6 @@ def translate(source: str, target: str,
         if cache.source_doc_hash != doc_hash:
             return True
         
-        for para in paragraphs:
-            if para.content_hash not in cache.paragraphs:
-                return True
-            cached_para = cache.paragraphs[para.content_hash]
-            if cached_para.source_content != para.content:
-                return True
-        
         return False
 
     files_to_translate_exclude_translated = [f for f in files_to_translate if needs_translation(f, cache_manager)]
