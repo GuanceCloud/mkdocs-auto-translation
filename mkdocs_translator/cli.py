@@ -5,8 +5,8 @@ import logging
 from datetime import datetime
 from .translator import DocumentTranslator
 from .utils import get_translatable_files, copy_resources, load_blacklist
-from .parser import parse_file_incremental, compute_doc_hash, is_pages_file
-from .cache_manager import CacheManager, CacheData
+from .parser import parse_file_incremental, compute_doc_hash, is_pages_file, plan_merge_units, assemble_translation, PlannedMergeUnit
+from .cache_manager import CacheManager, CacheData, MergeUnit
 from tqdm import tqdm
 import concurrent.futures
 from functools import partial
@@ -144,70 +144,43 @@ def translate(source: str, target: str,
                 cache = CacheData()
 
             if cache.source_doc_hash == doc_hash:
-                all_cached = True
-                for para in paragraphs:
-                    if para.content_hash not in cache.paragraphs:
-                        all_cached = False
-                        break
-
-                if all_cached:
-                    logging.info(f"文档未变化，使用缓存 - {relative_path}")
-                    
-                    current_para_hashes = [p.content_hash for p in paragraphs]
-                    removed_count = cache_manager.cleanup_stale_paragraphs(cache, current_para_hashes)
-                    if removed_count > 0:
-                        logging.info(f"清理了 {removed_count} 个过期段落缓存 - {relative_path}")
-                        cache_manager.save_cache(relative_path, cache)
-                    
-                    with _pbar_lock:
-                        pbar = _worker_pbars.get(worker_id)
-                        if pbar is None:
-                            pbar = tqdm(
-                                total=1,
-                                desc=f"Worker {worker_id + 1}: ({current_file_num}/{total_files}) {relative_path.name} [p {len(paragraphs)}/{len(paragraphs)}] (使用缓存:{len(paragraphs)}/{len(paragraphs)})",
-                                position=worker_id,
-                                leave=True,
-                                dynamic_ncols=True,
-                                mininterval=0.5,
-                                bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}'
-                            )
-                            _worker_pbars[worker_id] = pbar
-                        else:
-                            pbar.reset(total=1)
-                            pbar.set_description(f"Worker {worker_id + 1}: ({current_file_num}/{total_files}) {relative_path.name} [p {len(paragraphs)}/{len(paragraphs)}] (使用缓存:{len(paragraphs)}/{len(paragraphs)})")
-                        pbar.update(1)
-                    
-                    _assemble_from_cache(paragraphs, cache, target_file)
-                    return True
-
-            need_translate = []
-            for para in paragraphs:
-                if para.content_hash in cache.paragraphs:
-                    cached_para = cache.paragraphs[para.content_hash]
-                    if cached_para.source_content == para.content:
-                        continue
-
-                similar = cache_manager.find_similar_paragraph(para.content, cache, 0.6)
-                if similar:
-                    ref_source, ref_translation, similarity = similar
-                    extracted_terms = cache_manager.extract_terms_from_similar(ref_source, ref_translation)
-                    for chinese_term, english_term in extracted_terms:
-                        cache_manager.update_translation_memory(cache, chinese_term, english_term)
-                    logger.debug(f"从相似段落提取了 {len(extracted_terms)} 个术语，相似度: {similarity:.2f}")
+                logging.info(f"文档未变化，使用缓存 - {relative_path}")
                 
-                need_translate.append(para)
+                with _pbar_lock:
+                    pbar = _worker_pbars.get(worker_id)
+                    if pbar is None:
+                        pbar = tqdm(
+                            total=1,
+                            desc=f"Worker {worker_id + 1}: ({current_file_num}/{total_files}) {relative_path.name} (使用缓存)",
+                            position=worker_id,
+                            leave=True,
+                            dynamic_ncols=True,
+                            mininterval=0.5,
+                            bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}'
+                        )
+                        _worker_pbars[worker_id] = pbar
+                    else:
+                        pbar.reset(total=1)
+                        pbar.set_description(f"Worker {worker_id + 1}: ({current_file_num}/{total_files}) {relative_path.name} (使用缓存)")
+                    pbar.update(1)
+                
+                _write_translation(cache.merge_units, target_file)
+                return True
 
-            total_need = len(need_translate)
-            total_paragraphs = len(paragraphs)
-            cached_count = total_paragraphs - total_need
-            cache_info = f"(缓存:{cached_count}/{total_paragraphs})"
-
+            planned_units = plan_merge_units(paragraphs, cache.merge_units)
+            
+            total_units = len(planned_units)
+            need_translate_count = sum(1 for u in planned_units if u.need_translate)
+            reused_count = total_units - need_translate_count
+            
+            cache_info = f"(复用:{reused_count}/{total_units})"
+            
             with _pbar_lock:
                 pbar = _worker_pbars.get(worker_id)
                 if pbar is None:
                     pbar = tqdm(
-                        total=total_need if total_need > 0 else 1,
-                        desc=f"Worker {worker_id + 1}: ({current_file_num}/{total_files}) {relative_path.name} [p 0/{total_paragraphs}] {cache_info}",
+                        total=need_translate_count if need_translate_count > 0 else 1,
+                        desc=f"Worker {worker_id + 1}: ({current_file_num}/{total_files}) {relative_path.name} {cache_info}",
                         position=worker_id,
                         leave=True,
                         dynamic_ncols=True,
@@ -216,68 +189,58 @@ def translate(source: str, target: str,
                     )
                     _worker_pbars[worker_id] = pbar
                 else:
-                    pbar.reset(total=total_need if total_need > 0 else 1)
-                    pbar.set_description(f"Worker {worker_id + 1}: ({current_file_num}/{total_files}) {relative_path.name} [p 0/{total_paragraphs}] {cache_info}")
+                    pbar.reset(total=need_translate_count if need_translate_count > 0 else 1)
+                    pbar.set_description(f"Worker {worker_id + 1}: ({current_file_num}/{total_files}) {relative_path.name} {cache_info}")
 
-            if total_need > 0:
-
+            if need_translate_count > 0:
                 cumulative_usage = {
                     "prompt_tokens": 0,
                     "completion_tokens": 0,
                     "total_tokens": 0
                 }
 
-                for idx, para in enumerate(need_translate):
+                for idx, unit in enumerate(planned_units):
+                    if not unit.need_translate:
+                        continue
+                    
                     with _pbar_lock:
                         pbar.set_description(
-                            f"Worker {worker_id + 1}: ({current_file_num}/{total_files}) {relative_path.name} [p {idx+1}/{total_paragraphs}] {cache_info}"
+                            f"Worker {worker_id + 1}: ({current_file_num}/{total_files}) {relative_path.name} [u {idx+1}/{total_units}] {cache_info}"
                         )
+                    
                     translation, usage_data = translator.translate_paragraph(
-                        para.content,
+                        unit.merged_content,
                         translation_memory=cache.translation_memory,
                         position=worker_id,
-                        desc=f"{relative_path}: {para.content_hash}"
+                        desc=f"{relative_path}: merge_{idx}"
                     )
-
+                    
+                    unit.translation = translation
+                    
                     cumulative_usage["prompt_tokens"] += usage_data["prompt_tokens"]
                     cumulative_usage["completion_tokens"] += usage_data["completion_tokens"]
                     cumulative_usage["total_tokens"] += usage_data["total_tokens"]
-
-                    cache_manager.save_paragraph_translation(
-                        cache,
-                        para.content_hash,
-                        para.content,
-                        translation,
-                        para.paragraph_type
-                    )
-
-                    cache_manager.extract_and_update_memory(cache, para.content, translation)
-
+                    
+                    cache_manager.extract_and_update_memory(cache, unit.merged_content, translation)
+                    
                     with _pbar_lock:
                         pbar.update(1)
 
-                translated_metadata = {
-                    'translation_time': 0,
-                    'usage': cumulative_usage
-                }
-            else:
-                translated_metadata = {'translation_time': 0}
-                cache_info = f"(使用缓存:{total_paragraphs}/{total_paragraphs})"
-                with _pbar_lock:
-                    pbar.set_description(f"Worker {worker_id + 1}: ({current_file_num}/{total_files}) {relative_path.name} [p {total_paragraphs}/{total_paragraphs}] {cache_info}")
-                    pbar.update(1)
-
-            _assemble_from_cache(paragraphs, cache, target_file)
-
+            cache.paragraphs.clear()
+            for para in paragraphs:
+                cache.paragraphs[para.content_hash] = type('ParagraphCache', (), {'content': para.content})()
+            
+            cache.merge_units = [
+                MergeUnit(hashes=u.hashes, translation=u.translation)
+                for u in planned_units
+            ]
+            
             cache.source_doc_hash = doc_hash
             cache.last_translated = datetime.now().isoformat()
             
-            current_para_hashes = [p.content_hash for p in paragraphs]
-            removed_count = cache_manager.cleanup_stale_paragraphs(cache, current_para_hashes)
-            if removed_count > 0:
-                logging.info(f"清理了 {removed_count} 个过期段落缓存 - {relative_path}")
-            
             cache_manager.save_cache(relative_path, cache)
+            
+            _write_translation(cache.merge_units, target_file)
 
             logging.info(f"文件翻译成功 - {relative_path}")
             return True
@@ -288,14 +251,10 @@ def translate(source: str, target: str,
             print(f"翻译文件 {relative_path} 时发生错误: {error_message}")
             return False
 
-    def _assemble_from_cache(paragraphs, cache, target_file):
+    def _write_translation(merge_units: List[MergeUnit], target_file: Path):
         target_file.parent.mkdir(parents=True, exist_ok=True)
         with open(target_file, 'w', encoding='utf-8') as f:
-            for i, para in enumerate(paragraphs):
-                if para.content_hash in cache.paragraphs:
-                    f.write(cache.paragraphs[para.content_hash].translation)
-                if i < len(paragraphs) - 1:
-                    f.write("\n\n")
+            f.write("\n\n".join(mu.translation for mu in merge_units if mu.translation))
 
     # 并行执行翻译
     global _completed_count, _error_count

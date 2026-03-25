@@ -3,7 +3,7 @@ import hashlib
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +14,14 @@ class Paragraph:
     full_hash: str
     content: str
     paragraph_type: str
+
+
+@dataclass
+class PlannedMergeUnit:
+    hashes: List[str]
+    merged_content: str
+    translation: str
+    need_translate: bool
 
 
 CODE_BLOCK_PATTERN = re.compile(r'^(`{3,}|~{3,})[\s\S]*?\1', re.MULTILINE)
@@ -177,3 +185,93 @@ def parse_file_incremental(file_path: Path, is_pages: bool = False) -> List[Para
             paragraph_type='pages'
         )]
     return parse_file(file_path)
+
+
+def plan_merge_units(
+    paragraphs: List[Paragraph],
+    old_merge_units: List[Any],
+    min_length: int = 200
+) -> List[PlannedMergeUnit]:
+    """
+    Plan merge units for translation.
+    
+    Strategy:
+    1. If all paragraphs in an old merge_unit still exist, reuse it
+    2. Otherwise, greedily merge paragraphs until reaching min_length
+    3. Stop merging if next paragraph can reuse an old merge_unit
+    
+    Args:
+        paragraphs: List of Paragraph objects from current document
+        old_merge_units: List of old MergeUnit objects from cache
+        min_length: Minimum character count for merging (default 200)
+        
+    Returns:
+        List of PlannedMergeUnit objects
+    """
+    if not paragraphs:
+        return []
+    
+    para_hashes = [p.content_hash for p in paragraphs]
+    para_hash_set = set(para_hashes)
+    
+    old_merge_map: Dict[str, Any] = {}
+    for mu in old_merge_units:
+        for h in mu.hashes:
+            old_merge_map[h] = mu
+    
+    planned_units: List[PlannedMergeUnit] = []
+    i = 0
+    
+    while i < len(paragraphs):
+        para = paragraphs[i]
+        para_hash = para.content_hash
+        
+        if para_hash in old_merge_map:
+            old_mu = old_merge_map[para_hash]
+            if all(h in para_hash_set for h in old_mu.hashes):
+                planned_units.append(PlannedMergeUnit(
+                    hashes=old_mu.hashes.copy(),
+                    merged_content="",
+                    translation=old_mu.translation,
+                    need_translate=False
+                ))
+                i += len(old_mu.hashes)
+                logger.debug(f"[plan_merge_units] Reused merge_unit: {old_mu.hashes}")
+                continue
+        
+        merged_hashes = [para_hash]
+        merged_content = para.content
+        j = i + 1
+        
+        while j < len(paragraphs) and len(merged_content) < min_length:
+            next_para = paragraphs[j]
+            next_hash = next_para.content_hash
+            
+            if next_hash in old_merge_map:
+                old_mu = old_merge_map[next_hash]
+                if all(h in para_hash_set for h in old_mu.hashes):
+                    logger.debug(f"[plan_merge_units] Stop merge at {j}, next can reuse old merge_unit")
+                    break
+            
+            merged_hashes.append(next_hash)
+            merged_content += "\n\n" + next_para.content
+            j += 1
+        
+        planned_units.append(PlannedMergeUnit(
+            hashes=merged_hashes,
+            merged_content=merged_content,
+            translation="",
+            need_translate=True
+        ))
+        logger.debug(f"[plan_merge_units] New merge_unit: {merged_hashes}, length={len(merged_content)}")
+        i = j
+    
+    logger.debug(f"[plan_merge_units] Total planned units: {len(planned_units)}, need translate: {sum(1 for u in planned_units if u.need_translate)}")
+    return planned_units
+
+
+def assemble_translation(planned_units: List[PlannedMergeUnit]) -> str:
+    """
+    Assemble final translation from planned merge units.
+    """
+    return "\n\n".join(mu.translation for mu in planned_units if mu.translation)

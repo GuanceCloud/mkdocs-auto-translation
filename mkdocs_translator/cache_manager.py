@@ -7,17 +7,22 @@ from typing import Dict, List, Optional, Tuple
 
 @dataclass
 class ParagraphCache:
-    source_content: str
+    content: str
+
+
+@dataclass
+class MergeUnit:
+    hashes: List[str]
     translation: str
-    paragraph_type: str
 
 
 @dataclass
 class CacheData:
-    version: int = 1
+    version: int = 2
     source_doc_hash: str = ""
     last_translated: str = ""
     paragraphs: Dict[str, ParagraphCache] = field(default_factory=dict)
+    merge_units: List[MergeUnit] = field(default_factory=list)
     translation_memory: List[Dict[str, str]] = field(default_factory=list)
 
 
@@ -43,7 +48,7 @@ class CacheManager:
                 data = json.load(f)
 
             cache_data = CacheData(
-                version=data.get('version', 1),
+                version=data.get('version', 2),
                 source_doc_hash=data.get('source_doc_hash', ''),
                 last_translated=data.get('last_translated', ''),
                 translation_memory=data.get('translation_memory', [])
@@ -51,10 +56,14 @@ class CacheManager:
 
             for hash_key, para_data in data.get('paragraphs', {}).items():
                 cache_data.paragraphs[hash_key] = ParagraphCache(
-                    source_content=para_data.get('source_content', ''),
-                    translation=para_data.get('translation', ''),
-                    paragraph_type=para_data.get('paragraph_type', 'normal')
+                    content=para_data.get('content', '')
                 )
+
+            for mu_data in data.get('merge_units', []):
+                cache_data.merge_units.append(MergeUnit(
+                    hashes=mu_data.get('hashes', []),
+                    translation=mu_data.get('translation', '')
+                ))
 
             return cache_data
         except (json.JSONDecodeError, IOError):
@@ -68,118 +77,60 @@ class CacheManager:
             'source_doc_hash': cache_data.source_doc_hash,
             'last_translated': cache_data.last_translated,
             'translation_memory': cache_data.translation_memory,
-            'paragraphs': {}
+            'paragraphs': {},
+            'merge_units': []
         }
 
         for hash_key, para_cache in cache_data.paragraphs.items():
             data['paragraphs'][hash_key] = {
-                'source_content': para_cache.source_content,
-                'translation': para_cache.translation,
-                'paragraph_type': para_cache.paragraph_type
+                'content': para_cache.content
             }
+
+        for mu in cache_data.merge_units:
+            data['merge_units'].append({
+                'hashes': mu.hashes,
+                'translation': mu.translation
+            })
 
         with open(cache_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
 
-    def cleanup_stale_paragraphs(self, cache_data: CacheData, current_paragraph_hashes: List[str]) -> int:
+    def cleanup_stale_cache(self, cache_data: CacheData, current_paragraph_hashes: List[str]) -> int:
         """
-        Remove cached paragraphs that no longer exist in the current document.
+        Remove cached paragraphs and merge_units that no longer exist in the current document.
         
         Args:
             cache_data: The cache data to clean up
             current_paragraph_hashes: List of paragraph hashes from the current document
             
         Returns:
-            Number of removed stale paragraphs
+            Number of removed items
         """
         current_hash_set = set(current_paragraph_hashes)
-        stale_hashes = [h for h in cache_data.paragraphs.keys() if h not in current_hash_set]
+        removed_count = 0
         
+        stale_hashes = [h for h in cache_data.paragraphs.keys() if h not in current_hash_set]
         for stale_hash in stale_hashes:
             del cache_data.paragraphs[stale_hash]
+            removed_count += 1
         
-        return len(stale_hashes)
+        cache_data.merge_units = [
+            mu for mu in cache_data.merge_units
+            if all(h in current_hash_set for h in mu.hashes)
+        ]
+        
+        return removed_count
 
-    def get_paragraph_translation(self, cache_data: CacheData, para_hash: str) -> Optional[str]:
+    def get_paragraph_content(self, cache_data: CacheData, para_hash: str) -> Optional[str]:
         if para_hash in cache_data.paragraphs:
-            return cache_data.paragraphs[para_hash].translation
+            return cache_data.paragraphs[para_hash].content
         return None
 
-    def save_paragraph_translation(
-        self,
-        cache_data: CacheData,
-        para_hash: str,
-        source_content: str,
-        translation: str,
-        paragraph_type: str
-    ):
-        cache_data.paragraphs[para_hash] = ParagraphCache(
-            source_content=source_content,
-            translation=translation,
-            paragraph_type=paragraph_type
-        )
-
-    def extract_terms_from_similar(self, source_text: str, translation: str) -> List[Tuple[str, str]]:
-        """
-        Extract term pairs from similar paragraph for reference.
-        Returns list of (chinese_term, english_term) pairs.
-        """
-        import re
-        
-        terms = []
-        
-        chinese_pattern = re.compile(r'[\u4e00-\u9fff]+(?:[\u4e00-\u9fff\w\s]*[\u4e00-\u9fff])?')
-        
-        chinese_segments = chinese_pattern.findall(source_text)
-        
-        for chinese in chinese_segments:
-            if len(chinese) < 2 or len(chinese) > 20:
-                continue
-            
-            try:
-                chinese_index = source_text.index(chinese)
-                
-                remaining = source_text[chinese_index + len(chinese):]
-                next_chinese_match = chinese_pattern.search(remaining)
-                
-                if next_chinese_match:
-                    end_boundary = next_chinese_match.start()
-                    context_after = remaining[:end_boundary].strip()
-                else:
-                    context_after = remaining.strip()
-                
-                english_pattern = re.compile(r'\b([A-Z][a-z]+(?:[A-Z][a-z]+)*|[A-Z]{2,}|[a-z]+)\b')
-                english_matches = english_pattern.findall(context_after)
-                
-                if english_matches:
-                    for english in english_matches[:2]:
-                        if len(english) >= 2:
-                            terms.append((chinese.strip(), english))
-                            break
-            except ValueError:
-                continue
-        
-        return terms[:10]
-
-    def find_similar_paragraph(
-        self,
-        content: str,
-        cache_data: CacheData,
-        threshold: float = 0.6
-    ) -> Optional[Tuple[str, str, float]]:
-        if not cache_data.paragraphs:
-            return None
-
-        best_match = None
-        best_similarity = threshold
-
-        for para_hash, para_cache in cache_data.paragraphs.items():
-            similarity = compute_similarity(content, para_cache.source_content)
-            if similarity > best_similarity:
-                best_similarity = similarity
-                best_match = (para_cache.source_content, para_cache.translation, similarity)
-
-        return best_match
+    def find_merge_unit_by_hash(self, cache_data: CacheData, para_hash: str) -> Optional[MergeUnit]:
+        for mu in cache_data.merge_units:
+            if para_hash in mu.hashes:
+                return mu
+        return None
 
     def update_translation_memory(
         self,

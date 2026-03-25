@@ -2,10 +2,11 @@
 
 ## 一、目标
 
-实现文档增量翻译，解决两个痛点：
+实现文档增量翻译，解决以下痛点：
 
-1. **减少 token 消耗**：只翻译变更的段落，未变更段落直接使用缓存
-2. **翻译一致性**：通过相似段落匹配，保持前后翻译表达一致
+1. **减少 token 消耗**：只翻译变更的内容，未变更部分直接使用缓存
+2. **翻译质量**：通过段落合并保证上下文连贯性
+3. **缓存复用**：最大化利用已有翻译缓存
 
 ---
 
@@ -37,39 +38,38 @@
 
 ## 三、数据格式
 
-### 缓存文件结构
+### 缓存文件结构（v2）
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "source_doc_hash": "sha256_of_full_source_doc",
   "last_translated": "2024-01-01T00:00:00",
   "paragraphs": {
     "a3f2c1": {
-      "source_content": "第一章 安装",
-      "translation": "Chapter 1 Installation",
-      "type": "normal"
+      "content": "段落1原文"
     },
     "b7e9d4": {
-      "source_content": "```python\nprint('hello')\n```",
-      "translation": "```python\nprint('你好')\n```",
-      "type": "code"
+      "content": "段落2原文"
     },
-    "c1d2e3": {
-      "source_content": "!!! note\n    这是提示框",
-      "translation": "!!! note\n    This is a note",
-      "type": "admonition"
+    "93d1c2": {
+      "content": "段落3原文"
     }
   },
+  "merge_units": [
+    {
+      "hashes": ["a3f2c1", "b7e9d4"],
+      "translation": "段落1译文\n\n段落2译文"
+    },
+    {
+      "hashes": ["93d1c2"],
+      "translation": "段落3译文"
+    }
+  ],
   "translation_memory": [
     {
       "source": "DataKit",
       "translation": "DataKit",
-      "first_seen": "2024-01-01"
-    },
-    {
-      "source": "采集器",
-      "translation": "Collector",
       "first_seen": "2024-01-01"
     }
   ]
@@ -80,406 +80,251 @@
 
 | 字段 | 说明 |
 |------|------|
-| `version` | 缓存格式版本，用于后续兼容 |
+| `version` | 缓存格式版本，当前为 2 |
 | `source_doc_hash` | 整个源文档的 SHA256，用于快速判断文档是否变化 |
-| `paragraphs` | 段落级翻译缓存，key 为内容 hash 前6位 |
-| `paragraphs[].type` | 段落类型：`normal` \| `code` \| `admonition` \| `table` |
+| `paragraphs` | 段落原文缓存，key 为内容 hash 前6位，value 只存原文 |
+| `merge_units` | 合并翻译单元列表，按文档顺序存储 |
+| `merge_units[].hashes` | 该合并单元包含的段落 hash 列表 |
+| `merge_units[].translation` | 合并后的整体译文 |
 | `translation_memory` | 术语翻译记忆，确保术语一致性 |
 
 ---
 
-## 四、核心模块设计
+## 四、核心设计思想
+
+### 1. 段落切分与合并分离
+
+- **切分阶段**：按 `\n\n`（双换行符）切分，保持细粒度
+- **合并阶段**：翻译时合并相邻小段落，保证上下文
+
+### 2. 合并策略（200字阈值）
+
+```
+最小合并长度：200 字符
+策略：贪婪合并，直到达到阈值或遇到可复用的 merge_unit
+```
+
+### 3. 缓存复用优先
+
+当旧 merge_unit 中所有段落都未变化时，直接复用译文：
+
+```
+旧 merge_unit: [p0, p1, p2]
+新段落: p0(未变), p1(未变), p2(未变)
+→ 直接复用旧译文
+```
+
+### 4. 设计决策
+
+| 决策点 | 选择 | 说明 |
+|--------|------|------|
+| 合并单元内段落变化 | 整体重翻译 | 保证上下文连贯性 |
+| 新段落归入策略 | 归入相邻 merge_unit | 保持翻译连贯 |
+| 小段落处理 | 允许单独翻译 | 优先保证缓存复用 |
+| 译文存储 | 整体存储在 merge_unit | 不拆分，保持完整性 |
+
+---
+
+## 五、核心模块设计
 
 ### 1. 文档解析器 (`parser.py`)
 
-**职责**：将 Markdown 文档拆分为段落，生成内容指纹
-
 ```python
+@dataclass
 class Paragraph:
     content_hash: str      # 内容 SHA256 前6位
     full_hash: str         # 完整 SHA256
     content: str           # 原文内容
     paragraph_type: str    # normal | code | admonition | table
 
-def parse_file(file_path: Path) -> List[Paragraph]:
+@dataclass
+class PlannedMergeUnit:
+    hashes: List[str]          # 段落 hash 列表
+    merged_content: str        # 合并后的原文
+    translation: str           # 译文
+    need_translate: bool       # 是否需要翻译
+
+def parse_file_incremental(file_path: Path) -> List[Paragraph]:
     """解析文档，返回段落列表"""
 
-def parse_content(content: str) -> List[Paragraph]:
-    """解析文本内容，返回段落列表"""
+def plan_merge_units(
+    paragraphs: List[Paragraph],
+    old_merge_units: List[MergeUnit],
+    min_length: int = 200
+) -> List[PlannedMergeUnit]:
+    """
+    决策合并策略：
+    1. 如果旧 merge_unit 中所有段落都未变 → 复用
+    2. 否则 → 贪婪合并直到达到阈值
+    """
 
-def split_text_paragraphs(text: str) -> List[str]:
-    """按双换行符切分文本段落"""
+def assemble_translation(planned_units: List[PlannedMergeUnit]) -> str:
+    """组装最终译文"""
 ```
-
-**块识别规则**：
-
-| 类型 | 识别方式 | 示例 |
-|------|----------|------|
-| 代码块 | ``` 或 ~~~ 包围 | ```python\ncode\n``` |
-| admonition | !!! 或 ??? 开头 | !!! note\n 内容 |
-| 表格 | 连续多行以 \| 开头且列数一致 | \| a \| b \| |
-| 普通段落 | 非上述类型的文本，按空行切分 | 文本内容 |
-
-**段落切分策略**：
-
-- **切分粒度**：按 `\n\n`（双换行符）切分普通文本段落
-- **目的**：保持细粒度缓存，避免因新增/删除段落导致整个文档缓存失效
-- **优势**：
-  1. 段落粒度细，缓存命中率高
-  2. 新增/删除内容只影响局部段落
-  3. 便于增量更新
-
----
 
 ### 2. 缓存管理器 (`cache_manager.py`)
 
-**职责**：管理缓存文件的读写
-
 ```python
-class CacheManager:
-    def __init__(self, target_dir: Path):
-        self.target_dir = target_dir
-        self.cache_dir = target_dir / '.translation-cache'
+@dataclass
+class ParagraphCache:
+    content: str  # 只存原文
 
-    def load_cache(self, source_rel_path: Path) -> Optional[CacheData]:
-        """加载指定文档的缓存"""
+@dataclass
+class MergeUnit:
+    hashes: List[str]      # 段落 hash 列表
+    translation: str       # 整体译文
 
-    def save_cache(self, source_rel_path: Path, cache_data: CacheData):
-        """保存缓存到文件"""
-
-    def get_paragraph_translation(self, cache: CacheData, para_hash: str) -> Optional[str]:
-        """获取段落翻译结果"""
-
-    def save_paragraph_translation(self, cache: CacheData, para_hash: str, para: Paragraph, translation: str):
-        """保存段落翻译结果"""
-
-    def find_similar_paragraph(self, content: str, cache: CacheData, threshold: float = 0.6) -> Optional[Tuple[str, str, float]]:
-        """在缓存中找相似段落，返回 (源文本, 译文, 相似度)"""
-
-    def extract_terms_from_similar(self, source_text: str, translation: str) -> List[Tuple[str, str]]:
-        """从相似段落中提取术语对照，返回 [(中文术语, 英文术语), ...]"""
-
-    def cleanup_stale_paragraphs(self, cache_data: CacheData, current_paragraph_hashes: List[str]) -> int:
-        """清理缓存中已不在当前文档的段落，返回清理数量"""
+@dataclass
+class CacheData:
+    version: int = 2
+    source_doc_hash: str = ""
+    last_translated: str = ""
+    paragraphs: Dict[str, ParagraphCache]
+    merge_units: List[MergeUnit]
+    translation_memory: List[Dict[str, str]]
 ```
-
-**相似度算法**：使用编辑距离（Levenshtein），阈值 60%
-
-**相似段落处理策略**：
-
-当发现相似段落时，不再提供整段参考翻译，而是从中提取术语对照：
-
-1. **问题背景**：提供整段参考翻译会导致模型直接复制参考译文，忽略当前输入内容的差异
-2. **解决方案**：从相似段落中提取中英文术语对照，添加到术语表
-3. **术语提取规则**：
-   - 识别中文文本片段（2-20字）
-   - 查找中文片段后紧跟的英文单词
-   - 最多提取 10 个术语对
-
-**过期缓存清理**：
-
-每次文档翻译完成后，清理缓存中已不在当前文档的段落：
-
-1. **触发时机**：文档翻译完成后，保存缓存前
-2. **清理逻辑**：比对当前文档所有段落 hash，删除不在列表中的缓存段落
-3. **目的**：避免缓存文件持续膨胀，保持缓存与文档内容一致
 
 ---
 
-### 3. 翻译器扩展 (`translator.py`)
-
-**职责**：调用 LLM 翻译，注入上下文和术语表
-
-```python
-class DocumentTranslator:
-    def translate_paragraph(
-        self, 
-        text: str, 
-        translation_memory: List[Dict] = None
-    ) -> str:
-        """翻译单个段落"""
-        
-    def build_translation_prompt(
-        self, 
-        text: str, 
-        translation_memory: List[Dict] = None
-    ) -> Tuple[str, str]:
-        """构建翻译 Prompt"""
-```
-
-**增强 Prompt 模板**：
-
-```python
-SYSTEM_PROMPT = """你是一个专业的中文到英文技术文档翻译专家。
-
-## 术语表（必须保持一致）
-{terminology_list}
-
-## 翻译要求
-1. 必须与已有翻译保持术语一致
-2. 保持 Markdown 格式完整
-
-请翻译以下内容："""
-```
-
-**注意**：不再提供参考翻译，避免模型直接复制参考译文而忽略输入内容差异。术语一致性通过术语表保证。
-
----
-
-## 五、完整翻译流程
+## 六、完整翻译流程
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │ Step 1: 解析源文档                                                │
-│ source_path → paragraphs: [p_0, p_1, p_2, ...]                  │
-│ 每个段落包含: content, content_hash, paragraph_type             │
+│ paragraphs = parse_file_incremental(source_file)                │
+│ doc_hash = compute_doc_hash(paragraphs)                         │
 └─────────────────────────────────────────────────────────────────┘
                                  ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│ Step 2: 文档级 hash 比对                                          │
-│ doc_hash = sha256(所有段落内容拼接)                               │
-│ 如果 doc_hash == cache.source_doc_hash                          │
-│    且 所有段落 hash 都在缓存中 → 跳过整个文档                     │
+│ Step 2: 判断是否需要翻译                                          │
+│ if cache.source_doc_hash == doc_hash:                           │
+│   → 直接使用缓存，跳过翻译                                        │
 └─────────────────────────────────────────────────────────────────┘
                                  ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│ Step 3: 加载缓存                                                  │
-│ cache = cache_manager.load_cache(doc_rel_path)                  │
-│ 获取 translation_memory                                          │
+│ Step 3: 决策合并策略                                              │
+│ planned_units = plan_merge_units(paragraphs, cache.merge_units) │
+│                                                                 │
+│ 策略：                                                          │
+│ - 旧 merge_unit 完整复用 → need_translate = False               │
+│ - 否则贪婪合并 → need_translate = True                          │
 └─────────────────────────────────────────────────────────────────┘
                                  ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│ Step 4: 对比段落，确定需要翻译的项                                │
-│ for para in paragraphs:                                         │
-│   if para.content_hash in cache.paragraphs:                     │
-│     # 完全匹配，使用缓存                                         │
-│     cached = cache.paragraphs[para.content_hash]                │
-│     if cached.source_content == para.content:                   │
-│       use_cache(para.content_hash)                              │
-│     else:                                                        │
-│       # 内容完全相同但 hash 碰撞（极小概率），重新翻译            │
-│       need_translate.append(para)                               │
-│   else:                                                          │
-│     # hash 不存在，需要重新翻译                                  │
-│     # 在缓存中找相似段落，提取术语添加到术语表                   │
-│     similar = find_similar_paragraph(para.content, cache)       │
-│     if similar:                                                  │
-│       ref_source, ref_translation, similarity = similar         │
-│       terms = extract_terms_from_similar(ref_source, ref_translation) │
-│       for chinese_term, english_term in terms:                  │
-│         update_translation_memory(cache, chinese_term, english_term) │
-│     need_translate.append(para)                                 │
+│ Step 4: 执行翻译                                                  │
+│ for unit in planned_units:                                      │
+│   if unit.need_translate:                                       │
+│     unit.translation = translate(unit.merged_content)           │
 └─────────────────────────────────────────────────────────────────┘
                                  ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│ Step 5: 翻译需要更新的段落                                        │
-│ for para in need_translate:                                     │
-│   translation = translator.translate_paragraph(                 │
-│     para.content,                                                │
-│     translation_memory=cache.translation_memory                 │
-│   )                                                              │
-│   # 保存到缓存                                                   │
-│   cache.paragraphs[para.content_hash] = {                       │
-│     "source_content": para.content,                             │
-│     "translation": translation,                                 │
-│     "type": para.paragraph_type                                 │
-│   }                                                              │
-│   # 提取术语更新 translation_memory                             │
-│   extract_and_update_memory(para.content, translation, cache)   │
+│ Step 5: 更新缓存                                                  │
+│ cache.paragraphs = {所有段落的 content}                          │
+│ cache.merge_units = planned_units                               │
+│ cache.source_doc_hash = doc_hash                                │
+│ cache_manager.save_cache(relative_path, cache)                  │
 └─────────────────────────────────────────────────────────────────┘
                                  ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│ Step 6: 按源文档顺序组装译文                                      │
-│ result = ""                                                      │
-│ for para in paragraphs:                                         │
-│   if para.content_hash in cache.paragraphs:                     │
-│     result += cache.paragraphs[para.content_hash].translation   │
-│   else:                                                          │
-│     # 这个分支理论上不会走到（已在 Step 5 处理）                 │
-│     result += get_new_translation(para)                         │
-│   result += "\n\n"  # 段落间空行                                 │
-└─────────────────────────────────────────────────────────────────┘
-                                 ↓
-┌─────────────────────────────────────────────────────────────────┐
-│ Step 7: 保存译文和缓存                                            │
-│ write_file(target_path, result)                                 │
-│ cache_manager.save_cache(doc_rel_path, cache)                   │
+│ Step 6: 组装译文                                                  │
+│ result = "\n\n".join(mu.translation for mu in merge_units)      │
+│ write_file(target_file, result)                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 六、特殊文件处理
+## 七、场景示例
 
-### .pages 文件
+### 场景1：文档完全不变
 
-- **不拆分**：整体作为单一段落处理
-- **缓存 key**：整个文件内容的 hash（不是段落 hash）
-- **翻译方式**：直接调用 LLM 翻译整体内容
+```
+旧 merge_units: [[p0, p1], [p2, p3]]
+新段落: p0, p1, p2, p3 (全部未变)
+结果: 直接复用所有 merge_units ✓
+```
 
----
+### 场景2：合并单元内段落变化
 
-## 七、文件变更清单
+```
+旧 merge_units: [[p0, p1], [p2, p3, p4]]
+新段落: p0, p1_1(变化), p2, p3, p4
+结果: 
+  - [p0, p1_1] 重新翻译
+  - [p2, p3, p4] 复用
+```
 
-| 文件 | 操作 | 说明 |
-|------|------|------|
-| `mkdocs_translator/parser.py` | 新增 | 文档解析器，段落拆分，块识别 |
-| `mkdocs_translator/cache_manager.py` | 新增 | 缓存读写，段落匹配，相似度计算，术语提取 |
-| `mkdocs_translator/translator.py` | 修改 | 扩展支持段落级翻译和术语表注入 |
-| `mkdocs_translator/cli.py` | 修改 | 集成新翻译流程，移除 metadata.json 依赖 |
-| `mkdocs_translator/metadata.py` | 删除 | 已移除，改用 .translation-cache 判断文件变更 |
+### 场景3：删除段落
+
+```
+旧 merge_units: [[p0, p1], [p2, p3, p4]]
+新段落: p0, p2, p3, p4 (p1 删除)
+结果:
+  - [p0] 单独翻译
+  - [p2, p3, p4] 复用
+```
+
+### 场景4：新增段落
+
+```
+旧 merge_units: [[p0, p1], [p2, p3]]
+新段落: p0, p1, p_new, p2, p3
+结果:
+  - [p0, p1] 复用
+  - [p_new] 单独翻译（或与相邻合并）
+  - [p2, p3] 复用
+```
 
 ---
 
 ## 八、文件变更检测
 
-### 检测逻辑
-
-不再使用源目录的 `metadata.json` 和 `last-metadata.json`，改为直接读取目标目录的 `.translation-cache` 判断文件是否需要翻译：
-
 ```python
-def needs_translation(source_file: Path, cache_manager: CacheManager) -> bool:
-    relative_path = source_file.relative_to(source_path)
+def needs_translation(source_file, cache_manager):
     cache = cache_manager.load_cache(relative_path)
     
-    # 1. 缓存文件不存在 → 需要翻译
+    # 1. 缓存不存在 → 需要翻译
     if cache is None:
         return True
     
-    # 2. 计算当前文档 hash
+    # 2. 计算 hash
     paragraphs = parse_file_incremental(source_file)
     doc_hash = compute_doc_hash(paragraphs)
     
-    # 3. 文档 hash 不一致 → 需要翻译
+    # 3. hash 不同 → 需要翻译
     if cache.source_doc_hash != doc_hash:
         return True
     
-    # 4. hash 一致 → 无需翻译，直接跳过
+    # 4. hash 相同 → 无需翻译
     return False
 ```
 
-### 优势
+---
 
-1. **简化存储**：只维护一份缓存数据，避免数据冗余
-2. **一致性**：缓存数据与翻译结果一一对应
-3. **可移植性**：缓存随目标目录一起迁移，无需额外文件
+## 九、文件变更清单
+
+| 文件 | 操作 | 说明 |
+|------|------|------|
+| `mkdocs_translator/parser.py` | 新增 | 文档解析器，段落拆分，合并策略 |
+| `mkdocs_translator/cache_manager.py` | 新增 | 缓存读写，MergeUnit 管理 |
+| `mkdocs_translator/translator.py` | 修改 | 支持段落级翻译和术语表注入 |
+| `mkdocs_translator/cli.py` | 修改 | 集成新翻译流程 |
+| `mkdocs_translator/metadata.py` | 删除 | 已移除 |
 
 ---
 
-## 九、边界情况处理
+## 十、调试日志
 
-| 场景 | 处理方式 |
-|------|----------|
-| 文档完全未变 | 文档级 hash 匹配，跳过 |
-| 段落内容完全相同 | hash 匹配，直接使用缓存 |
-| 段落内容有变更 | hash 不存在，翻译新段落 |
-| 段落有变更 + 相似匹配 | hash 不存在，从相似段落提取术语添加到术语表，再翻译 |
-| 新增段落 | 新 hash，翻译并新增缓存 |
-| 删除段落 | 翻译完成后自动清理对应的段落缓存 |
-| 段落顺序变化 | 按当前顺序组装，hash 匹配到正确位置 |
-| 代码块 | 作为整体段落翻译，LLM 保持代码不变 |
-| LLM 翻译失败 | 记录错误日志，该段落不写入缓存 |
-
----
-
-## 十一、术语提取规则
-
-从翻译结果中自动提取术语：
+### 合并策略日志
 
 ```python
-def extract_terms(source: str, translation: str) -> List[Dict]:
-    # 1. 专有名词：连续英文（长度 >= 3）
-    # 2. 技术术语：驼峰命名、缩写（API、SDK、HTTP）
-    # 3. 括号对照：原文"A（B）" → 译文"A（B）"
-    # 4. 首次出现的英文单词保留在译文中
+[plan_merge_units] Reused merge_unit: ['a3f2c1', 'b7e9d4']
+[plan_merge_units] Stop merge at 2, next can reuse old merge_unit
+[plan_merge_units] New merge_unit: ['e5f6a7'], length=150
+[plan_merge_units] Total planned units: 3, need translate: 1
 ```
 
 ---
 
-## 十二、终端进度输出
-
-### 1. Worker 进度行
-
-每个 worker 一行，固定位置显示当前工作状态：
-
-```
-Worker 1: (2/5) install.md [p 3/12 ████████░░░░░░░░░░░░ 45%] (缓存:5/12)
-Worker 2: (1/5) config.md  [p 0/8 ] 使用缓存
-Worker 3: (5/5) .pages     [p -/- ] Done in 3.2s
-Worker 4: (0/5) index.md   [p -/- ] 等待中...
-```
-
-**格式说明**：
-
-| 元素 | 说明 |
-|------|------|
-| `(2/5)` | 当前文件索引 / worker 中总文件数 |
-| `install.md` | 当前文档名 |
-| `[p 3/12]` | 当前段落索引 / 总段落数 |
-| `███████░░` | 段落级进度条 |
-| `(缓存:5/12)` | 缓存命中数 / 总段落数 |
-
-### 2. Total 进度行
-
-最后位置显示总体进度：
-
-```
-Total: 50 files | Completed: 30 | Failed: 2 | Cached: 120 paras
-```
-
-**格式说明**：
-
-| 元素 | 说明 |
-|------|------|
-| `Total: 50 files` | 需要翻译的总文件数 |
-| `Completed: 30` | 已完成文件数 |
-| `Failed: 2` | 失败文件数 |
-| `Cached: 120 paras` | 使用缓存的段落总数 |
-
-### 3. 进度条关闭顺序
-
-翻译完成后，进度条按以下顺序关闭，确保终端输出整齐：
-
-1. 先关闭所有 Worker 进度条（按 worker_id 从小到大）
-2. 最后关闭 Total 进度行，保持在最底部
-
----
-
-## 十三、调试日志
-
-### 日志级别
-
-- 默认日志级别：`DEBUG`
-- 日志文件：`translation.log`
-
-### 段落分割日志
-
-```python
-# parse_content 函数
-[parse_content] Total parts after extraction: 3
-[parse_content] Part 0: type=text, length=150
-[parse_content] Part 1: type=code, length=80
-[parse_content] Part 2: type=text, length=200
-[parse_content] Split into 5 text paragraphs
-[parse_content] Added text paragraph 0: hash=a3f2c1, length=50, preview='# 标题\n'
-[parse_content] Added text paragraph 1: hash=b7e9d4, length=100, preview='第一段内容...\n'
-[parse_content] Total paragraphs: 5
-```
-
-### 相似段落匹配日志
-
-```python
-# 从相似段落提取术语
-从相似段落提取了 5 个术语，相似度: 0.85
-```
-
----
-
-## 十四、待确认事项
-
-无
-
----
-
-**方案版本**：v1.3  
-**最后更新**：2026-03-20
+**方案版本**：v2.0  
+**最后更新**：2026-03-24
