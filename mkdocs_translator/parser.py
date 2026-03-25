@@ -196,7 +196,7 @@ def plan_merge_units(
     Plan merge units for translation.
     
     Strategy:
-    1. If all paragraphs in an old merge_unit still exist, reuse it
+    1. If all paragraphs in an old merge_unit still exist consecutively, reuse it
     2. Otherwise, greedily merge paragraphs until reaching min_length
     3. Stop merging if next paragraph can reuse an old merge_unit
     
@@ -212,12 +212,20 @@ def plan_merge_units(
         return []
     
     para_hashes = [p.content_hash for p in paragraphs]
-    para_hash_set = set(para_hashes)
     
     old_merge_map: Dict[str, Any] = {}
     for mu in old_merge_units:
         for h in mu.hashes:
             old_merge_map[h] = mu
+    
+    def can_reuse_merge_unit(start_idx: int, merge_unit: Any) -> bool:
+        """Check if merge_unit can be reused starting from start_idx (consecutive match)"""
+        if start_idx + len(merge_unit.hashes) > len(para_hashes):
+            return False
+        for offset, h in enumerate(merge_unit.hashes):
+            if para_hashes[start_idx + offset] != h:
+                return False
+        return True
     
     planned_units: List[PlannedMergeUnit] = []
     i = 0
@@ -228,7 +236,7 @@ def plan_merge_units(
         
         if para_hash in old_merge_map:
             old_mu = old_merge_map[para_hash]
-            if all(h in para_hash_set for h in old_mu.hashes):
+            if can_reuse_merge_unit(i, old_mu):
                 planned_units.append(PlannedMergeUnit(
                     hashes=old_mu.hashes.copy(),
                     merged_content="",
@@ -249,7 +257,7 @@ def plan_merge_units(
             
             if next_hash in old_merge_map:
                 old_mu = old_merge_map[next_hash]
-                if all(h in para_hash_set for h in old_mu.hashes):
+                if can_reuse_merge_unit(j, old_mu):
                     logger.debug(f"[plan_merge_units] Stop merge at {j}, next can reuse old merge_unit")
                     break
             

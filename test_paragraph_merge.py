@@ -285,6 +285,45 @@ class TestPlanMergeUnits(unittest.TestCase):
         self.assertEqual(len(result), 2)
         self.assertEqual(len(result[0].hashes), 1)
         self.assertEqual(len(result[1].hashes), 1)
+    
+    def test_inserted_paragraph_between_similar_content(self):
+        """测试在相似内容之间插入新段落场景（bug 修复）
+        
+        当文档中新增段落，且新增段落前后的内容与旧文档中某些段落内容相同时，
+        需要确保新增段落被正确处理，不会被跳过。
+        """
+        old_paragraphs = self._create_paragraphs([
+            "### 标题",
+            "- 列表项1",
+            "- 列表项2"
+        ])
+        
+        old_merge_units = [
+            MergeUnit(
+                hashes=[p.content_hash for p in old_paragraphs],
+                translation="Old translation"
+            )
+        ]
+        
+        new_paragraphs = self._create_paragraphs([
+            "### 标题",
+            "- 列表项1",
+            "- 列表项2",
+            "### 新标题",
+            "- 列表项1",
+            "- 列表项2"
+        ])
+        
+        result = plan_merge_units(new_paragraphs, old_merge_units)
+        
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0].need_translate, False)
+        self.assertEqual(result[1].need_translate, True)
+        
+        all_hashes = []
+        for unit in result:
+            all_hashes.extend(unit.hashes)
+        self.assertEqual(len(all_hashes), 6)
 
 
 class TestAssembleTranslation(unittest.TestCase):
@@ -393,8 +432,8 @@ class TestEdgeCases(unittest.TestCase):
         """测试有重叠哈希的合并单元
         
         当旧 merge_units 有重叠时（如 [h1,h2] 和 [h2,h3]），
-        第一个 merge_unit 会被复用，然后 h3 会尝试复用第二个。
-        由于 h2 已经被第一个 merge_unit 处理，第二个无法完整复用。
+        第一个 merge_unit 会被复用，然后 h3 无法复用第二个（因为 h2 已经被处理过）。
+        所以 h3 会作为新单元处理。
         """
         paragraphs = [
             Paragraph(content_hash="h1", full_hash="f1", content="P1", paragraph_type='normal'),
@@ -409,11 +448,13 @@ class TestEdgeCases(unittest.TestCase):
         
         result = plan_merge_units(paragraphs, old_merge_units)
         
+        # 第一个 merge_unit [h1, h2] 可以连续复用
         self.assertEqual(len(result), 2)
         self.assertEqual(result[0].need_translate, False)
         self.assertEqual(result[0].translation, "T1-2")
-        self.assertEqual(result[1].need_translate, False)
-        self.assertEqual(result[1].translation, "T2-3")
+        # 第二个 merge_unit [h2, h3] 无法复用（h2 已被处理），h3 作为新单元
+        self.assertEqual(result[1].need_translate, True)
+        self.assertEqual(result[1].hashes, ["h3"])
 
 
 if __name__ == '__main__':
