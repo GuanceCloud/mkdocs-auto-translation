@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from mkdocs_translator.parser import (
     parse_content,
     split_text_paragraphs,
+    split_markdown_blocks,
     compute_hash,
     plan_merge_units,
     assemble_translation,
@@ -101,8 +102,62 @@ code here
         self.assertGreater(len(paragraphs), 0)
         
         types = [p.paragraph_type for p in paragraphs]
+        self.assertIn('heading', types)
         self.assertIn('normal', types)
         self.assertIn('code', types)
+
+    def test_markdown_structures_are_split(self):
+        """测试 Markdown 结构优先切块"""
+        content = """# 标题
+
+这是第一段。
+
+- 列表项1
+- 列表项2
+
+| 列1 | 列2 |
+| --- | --- |
+| A | B |
+
+> 引用内容
+"""
+        paragraphs = parse_content(content)
+        types = [p.paragraph_type for p in paragraphs]
+        self.assertEqual(types, ['heading', 'normal', 'list', 'table', 'blockquote'])
+
+    def test_setext_heading(self):
+        """测试 Setext 标题切分"""
+        content = """标题
+====
+
+正文
+"""
+        paragraphs = parse_content(content)
+        self.assertEqual(paragraphs[0].paragraph_type, 'heading')
+        self.assertEqual(paragraphs[1].paragraph_type, 'normal')
+
+
+class TestSplitMarkdownBlocks(unittest.TestCase):
+    """测试 Markdown 块切分"""
+
+    def test_split_blocks(self):
+        content = """---
+title: test
+---
+
+# 标题
+
+正文
+
+```python
+print("hello")
+```
+"""
+        blocks = split_markdown_blocks(content)
+        self.assertEqual(
+            [block_type for block_type, _ in blocks],
+            ['frontmatter', 'heading', 'normal', 'code']
+        )
 
 
 class TestComputeHash(unittest.TestCase):
@@ -285,6 +340,34 @@ class TestPlanMergeUnits(unittest.TestCase):
         self.assertEqual(len(result), 2)
         self.assertEqual(len(result[0].hashes), 1)
         self.assertEqual(len(result[1].hashes), 1)
+
+    def test_structural_block_not_merged_with_normal(self):
+        """测试结构块不会与普通段落合并"""
+        paragraphs = [
+            Paragraph(
+                content_hash=compute_hash("# 标题")[0],
+                full_hash=compute_hash("# 标题")[1],
+                content="# 标题",
+                paragraph_type='heading'
+            ),
+            Paragraph(
+                content_hash=compute_hash("正文")[0],
+                full_hash=compute_hash("正文")[1],
+                content="正文",
+                paragraph_type='normal'
+            ),
+            Paragraph(
+                content_hash=compute_hash("更多正文")[0],
+                full_hash=compute_hash("更多正文")[1],
+                content="更多正文",
+                paragraph_type='normal'
+            ),
+        ]
+
+        result = plan_merge_units(paragraphs, [], min_length=200)
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0].hashes, [paragraphs[0].content_hash])
+        self.assertEqual(result[1].hashes, [paragraphs[1].content_hash, paragraphs[2].content_hash])
     
     def test_inserted_paragraph_between_similar_content(self):
         """测试在相似内容之间插入新段落场景（bug 修复）

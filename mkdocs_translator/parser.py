@@ -3,7 +3,7 @@ import hashlib
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Dict, Any
+from typing import List, Dict, Any, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -26,8 +26,17 @@ class PlannedMergeUnit:
 
 CODE_BLOCK_PATTERN = re.compile(r'^(`{3,}|~{3,})[\s\S]*?\1', re.MULTILINE)
 ADMONITION_PATTERN = re.compile(r'^(!{3,4}|\?{3,4})\s*\w+.*?(?=\n!{3,4}|\n\?{3,4}|\Z)', re.MULTILINE | re.DOTALL)
-TABLE_PATTERN = re.compile(r'^(?:\|.+\|[\s]*\n?)+', re.MULTILINE)
-FRONTMATTER_PATTERN = re.compile(r'^---\n[\s\S]*?\n---\n', re.MULTILINE)
+TABLE_PATTERN = re.compile(r'^\s*\|.*\|\s*$')
+TABLE_DELIMITER_PATTERN = re.compile(r'^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?\s*$')
+FRONTMATTER_PATTERN = re.compile(r'^---\n[\s\S]*?\n---\n?', re.MULTILINE)
+FENCE_START_PATTERN = re.compile(r'^(\s*)(`{3,}|~{3,})(.*)$')
+ADMONITION_START_PATTERN = re.compile(r'^\s*(!{3,4}|\?{3,4})\s+\S+.*$')
+ATX_HEADING_PATTERN = re.compile(r'^\s{0,3}#{1,6}\s+')
+SETEXT_UNDERLINE_PATTERN = re.compile(r'^\s{0,3}(=+|-+)\s*$')
+BLOCKQUOTE_PATTERN = re.compile(r'^\s{0,3}>')
+UNORDERED_LIST_PATTERN = re.compile(r'^\s{0,3}[-+*]\s+')
+ORDERED_LIST_PATTERN = re.compile(r'^\s{0,3}\d+[.)]\s+')
+THEMATIC_BREAK_PATTERN = re.compile(r'^\s{0,3}(?:\*\s*){3,}$|^\s{0,3}(?:-\s*){3,}$|^\s{0,3}(?:_\s*){3,}$')
 
 
 def compute_hash(content: str) -> tuple:
@@ -68,32 +77,156 @@ def is_frontmatter(text: str) -> bool:
     return bool(FRONTMATTER_PATTERN.match(text))
 
 
-def extract_all_blocks(content: str) -> List[tuple]:
-    blocks = []
-    search_start = 0
+def _join_lines(lines: List[str]) -> str:
+    return "\n".join(lines).rstrip("\n")
 
-    while True:
-        code_match = CODE_BLOCK_PATTERN.search(content, search_start)
-        admonition_match = ADMONITION_PATTERN.search(content, search_start)
-        frontmatter_match = FRONTMATTER_PATTERN.search(content, search_start)
 
-        candidates = []
-        if code_match:
-            candidates.append((code_match.start(), 'code', code_match))
-        if admonition_match:
-            candidates.append((admonition_match.start(), 'admonition', admonition_match))
-        if frontmatter_match:
-            candidates.append((frontmatter_match.start(), 'frontmatter', frontmatter_match))
+def _is_blank(line: str) -> bool:
+    return not line.strip()
 
-        if not candidates:
-            break
 
-        candidates.sort(key=lambda x: x[0])
-        earliest_pos, earliest_type, earliest_match = candidates[0]
+def _is_table_start(lines: List[str], index: int) -> bool:
+    if index + 1 >= len(lines):
+        return False
+    return bool(TABLE_PATTERN.match(lines[index]) and TABLE_DELIMITER_PATTERN.match(lines[index + 1]))
 
-        block_text = earliest_match.group(0)
-        blocks.append((earliest_type, block_text, earliest_pos))
-        search_start = earliest_pos + len(block_text)
+
+def _is_list_start(line: str) -> bool:
+    return bool(UNORDERED_LIST_PATTERN.match(line) or ORDERED_LIST_PATTERN.match(line))
+
+
+def _is_indented_continuation(line: str) -> bool:
+    if _is_blank(line):
+        return True
+    stripped = line.lstrip()
+    indent = len(line) - len(stripped)
+    return indent >= 2
+
+
+def split_markdown_blocks(content: str) -> List[Tuple[str, str]]:
+    normalized = content.replace('\r\n', '\n').replace('\r', '\n')
+    if not normalized.strip():
+        return []
+
+    blocks: List[Tuple[str, str]] = []
+    lines = normalized.split('\n')
+    total = len(lines)
+    i = 0
+
+    if normalized.startswith('---\n'):
+        end = 1
+        while end < total:
+            if lines[end].strip() == '---':
+                blocks.append(('frontmatter', _join_lines(lines[:end + 1])))
+                i = end + 1
+                while i < total and _is_blank(lines[i]):
+                    i += 1
+                break
+            end += 1
+
+    while i < total:
+        if _is_blank(lines[i]):
+            i += 1
+            continue
+
+        line = lines[i]
+
+        fence_match = FENCE_START_PATTERN.match(line)
+        if fence_match:
+            indent, fence, _ = fence_match.groups()
+            j = i + 1
+            while j < total:
+                closing = lines[j]
+                if closing.startswith(indent + fence[0] * len(fence)):
+                    j += 1
+                    break
+                j += 1
+            blocks.append(('code', _join_lines(lines[i:j])))
+            i = j
+            continue
+
+        if ADMONITION_START_PATTERN.match(line):
+            j = i + 1
+            while j < total:
+                current = lines[j]
+                if _is_blank(current):
+                    j += 1
+                    continue
+                if current.startswith('    ') or current.startswith('\t'):
+                    j += 1
+                    continue
+                break
+            blocks.append(('admonition', _join_lines(lines[i:j])))
+            i = j
+            continue
+
+        if _is_table_start(lines, i):
+            j = i + 2
+            while j < total and TABLE_PATTERN.match(lines[j]):
+                j += 1
+            blocks.append(('table', _join_lines(lines[i:j])))
+            i = j
+            continue
+
+        if ATX_HEADING_PATTERN.match(line):
+            blocks.append(('heading', line.rstrip()))
+            i += 1
+            continue
+
+        if i + 1 < total and lines[i].strip() and SETEXT_UNDERLINE_PATTERN.match(lines[i + 1]):
+            blocks.append(('heading', _join_lines(lines[i:i + 2])))
+            i += 2
+            continue
+
+        if THEMATIC_BREAK_PATTERN.match(line):
+            blocks.append(('thematic_break', line.rstrip()))
+            i += 1
+            continue
+
+        if BLOCKQUOTE_PATTERN.match(line):
+            j = i + 1
+            while j < total and (BLOCKQUOTE_PATTERN.match(lines[j]) or _is_blank(lines[j])):
+                j += 1
+            blocks.append(('blockquote', _join_lines(lines[i:j])))
+            i = j
+            continue
+
+        if _is_list_start(line):
+            j = i + 1
+            while j < total:
+                current = lines[j]
+                if _is_blank(current):
+                    if j + 1 < total and (_is_list_start(lines[j + 1]) or _is_indented_continuation(lines[j + 1])):
+                        j += 1
+                        continue
+                    break
+                if _is_list_start(current) or _is_indented_continuation(current):
+                    j += 1
+                    continue
+                break
+            blocks.append(('list', _join_lines(lines[i:j])))
+            i = j
+            continue
+
+        j = i + 1
+        while j < total:
+            current = lines[j]
+            if _is_blank(current):
+                break
+            if (
+                FENCE_START_PATTERN.match(current)
+                or ADMONITION_START_PATTERN.match(current)
+                or _is_table_start(lines, j)
+                or ATX_HEADING_PATTERN.match(current)
+                or (j + 1 < total and lines[j].strip() and SETEXT_UNDERLINE_PATTERN.match(lines[j + 1]))
+                or THEMATIC_BREAK_PATTERN.match(current)
+                or BLOCKQUOTE_PATTERN.match(current)
+                or _is_list_start(current)
+            ):
+                break
+            j += 1
+        blocks.append(('normal', _join_lines(lines[i:j])))
+        i = j
 
     return blocks
 
@@ -101,52 +234,21 @@ def extract_all_blocks(content: str) -> List[tuple]:
 def parse_content(content: str) -> List[Paragraph]:
     paragraphs = []
 
-    extracted_blocks = extract_all_blocks(content)
+    parts = split_markdown_blocks(content)
 
-    if extracted_blocks:
-        parts = []
-        last_end = 0
-        for block_type, block_text, pos in extracted_blocks:
-            if pos > last_end:
-                text_part = content[last_end:pos]
-                if text_part.strip():
-                    parts.append(('text', text_part))
-            parts.append((block_type, block_text))
-            last_end = pos + len(block_text)
-        if last_end < len(content):
-            text_part = content[last_end:]
-            if text_part.strip():
-                parts.append(('text', text_part))
-    else:
-        parts = [('text', content)]
-
-    logger.debug(f"[parse_content] Total parts after extraction: {len(parts)}")
+    logger.debug(f"[parse_content] Total blocks after markdown split: {len(parts)}")
     for idx, (part_type, part_content) in enumerate(parts):
         logger.debug(f"[parse_content] Part {idx}: type={part_type}, length={len(part_content)}")
 
     for part_type, part_content in parts:
-        if part_type != 'text':
-            content_hash, full_hash = compute_hash(part_content)
-            paragraphs.append(Paragraph(
-                content_hash=content_hash,
-                full_hash=full_hash,
-                content=part_content,
-                paragraph_type=part_type
-            ))
-            logger.debug(f"[parse_content] Added {part_type} block: hash={content_hash}, length={len(part_content)}")
-        else:
-            text_paragraphs = split_text_paragraphs(part_content)
-            logger.debug(f"[parse_content] Split into {len(text_paragraphs)} text paragraphs")
-            for para_idx, para_text in enumerate(text_paragraphs):
-                if para_text.strip():
-                    content_hash, full_hash = compute_hash(para_text)
-                    paragraphs.append(Paragraph(
-                        content_hash=content_hash,
-                        full_hash=full_hash,
-                        content=para_text,
-                        paragraph_type='normal'
-                    ))
-                    logger.debug(f"[parse_content] Added text paragraph {para_idx}: hash={content_hash}, length={len(para_text)}, preview={para_text[:50]!r}...")
+        content_hash, full_hash = compute_hash(part_content)
+        paragraphs.append(Paragraph(
+            content_hash=content_hash,
+            full_hash=full_hash,
+            content=part_content,
+            paragraph_type=part_type
+        ))
+        logger.debug(f"[parse_content] Added {part_type} block: hash={content_hash}, length={len(part_content)}")
 
     logger.debug(f"[parse_content] Total paragraphs: {len(paragraphs)}")
     return paragraphs
@@ -233,10 +335,24 @@ def plan_merge_units(
     while i < len(paragraphs):
         para = paragraphs[i]
         para_hash = para.content_hash
-        
+
+        if para.paragraph_type != 'normal':
+            planned_units.append(PlannedMergeUnit(
+                hashes=[para_hash],
+                merged_content=para.content,
+                translation="",
+                need_translate=True
+            ))
+            logger.debug(f"[plan_merge_units] Structural unit kept standalone: {para.paragraph_type}, hash={para_hash}")
+            i += 1
+            continue
+
         if para_hash in old_merge_map:
             old_mu = old_merge_map[para_hash]
-            if can_reuse_merge_unit(i, old_mu):
+            if can_reuse_merge_unit(i, old_mu) and all(
+                paragraphs[i + offset].paragraph_type == 'normal'
+                for offset in range(len(old_mu.hashes))
+            ):
                 planned_units.append(PlannedMergeUnit(
                     hashes=old_mu.hashes.copy(),
                     merged_content="",
@@ -254,10 +370,16 @@ def plan_merge_units(
         while j < len(paragraphs) and len(merged_content) < min_length:
             next_para = paragraphs[j]
             next_hash = next_para.content_hash
+
+            if next_para.paragraph_type != 'normal':
+                break
             
             if next_hash in old_merge_map:
                 old_mu = old_merge_map[next_hash]
-                if can_reuse_merge_unit(j, old_mu):
+                if can_reuse_merge_unit(j, old_mu) and all(
+                    paragraphs[j + offset].paragraph_type == 'normal'
+                    for offset in range(len(old_mu.hashes))
+                ):
                     logger.debug(f"[plan_merge_units] Stop merge at {j}, next can reuse old merge_unit")
                     break
             
