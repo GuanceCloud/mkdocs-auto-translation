@@ -6,23 +6,31 @@ from typing import Dict, List, Optional, Tuple
 
 
 @dataclass
-class ParagraphCache:
+class CachedBlock:
+    short_hash: str
+    block_type: str
     content: str
+    section_path: List[str] = field(default_factory=list)
 
 
 @dataclass
-class MergeUnit:
-    hashes: List[str]
+class TranslationUnit:
+    unit_id: str
+    unit_type: str
+    block_hashes: List[str]
+    source_hash: str
+    context_signature: str
+    section_path: List[str]
     translation: str
 
 
 @dataclass
 class CacheData:
-    version: int = 2
+    version: int = 3
     source_doc_hash: str = ""
     last_translated: str = ""
-    paragraphs: Dict[str, ParagraphCache] = field(default_factory=dict)
-    merge_units: List[MergeUnit] = field(default_factory=list)
+    blocks: Dict[str, CachedBlock] = field(default_factory=dict)
+    translation_units: List[TranslationUnit] = field(default_factory=list)
     translation_memory: List[Dict[str, str]] = field(default_factory=list)
 
 
@@ -30,8 +38,7 @@ class CacheManager:
     def __init__(self, target_dir: Path):
         self.target_dir = target_dir
         self.cache_dir = target_dir / '.translation-cache'
-        if not self.cache_dir.exists():
-            self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
 
     def _get_cache_path(self, source_rel_path: Path) -> Path:
         cache_path = self.cache_dir / f"{source_rel_path}.json"
@@ -48,21 +55,32 @@ class CacheManager:
                 data = json.load(f)
 
             cache_data = CacheData(
-                version=data.get('version', 2),
+                version=data.get('version', 3),
                 source_doc_hash=data.get('source_doc_hash', ''),
                 last_translated=data.get('last_translated', ''),
                 translation_memory=data.get('translation_memory', [])
             )
 
-            for hash_key, para_data in data.get('paragraphs', {}).items():
-                cache_data.paragraphs[hash_key] = ParagraphCache(
-                    content=para_data.get('content', '')
+            for full_hash, block_data in data.get('blocks', {}).items():
+                block = CachedBlock(
+                    short_hash=block_data.get('short_hash', ''),
+                    block_type=block_data.get('block_type', 'normal'),
+                    content=block_data.get('content', ''),
+                    section_path=block_data.get('section_path', [])
                 )
+                cache_key = full_hash or block_data.get('full_hash', '')
+                if cache_key:
+                    cache_data.blocks[cache_key] = block
 
-            for mu_data in data.get('merge_units', []):
-                cache_data.merge_units.append(MergeUnit(
-                    hashes=mu_data.get('hashes', []),
-                    translation=mu_data.get('translation', '')
+            for unit_data in data.get('translation_units', []):
+                cache_data.translation_units.append(TranslationUnit(
+                    unit_id=unit_data.get('unit_id', ''),
+                    unit_type=unit_data.get('unit_type', 'section_unit'),
+                    block_hashes=unit_data.get('block_hashes', []),
+                    source_hash=unit_data.get('source_hash', ''),
+                    context_signature=unit_data.get('context_signature', ''),
+                    section_path=unit_data.get('section_path', []),
+                    translation=unit_data.get('translation', '')
                 ))
 
             return cache_data
@@ -77,59 +95,50 @@ class CacheManager:
             'source_doc_hash': cache_data.source_doc_hash,
             'last_translated': cache_data.last_translated,
             'translation_memory': cache_data.translation_memory,
-            'paragraphs': {},
-            'merge_units': []
+            'blocks': {},
+            'translation_units': []
         }
 
-        for hash_key, para_cache in cache_data.paragraphs.items():
-            data['paragraphs'][hash_key] = {
-                'content': para_cache.content
+        for full_hash, block in cache_data.blocks.items():
+            data['blocks'][full_hash] = {
+                'short_hash': block.short_hash,
+                'block_type': block.block_type,
+                'content': block.content,
+                'section_path': block.section_path
             }
 
-        for mu in cache_data.merge_units:
-            data['merge_units'].append({
-                'hashes': mu.hashes,
-                'translation': mu.translation
+        for unit in cache_data.translation_units:
+            data['translation_units'].append({
+                'unit_id': unit.unit_id,
+                'unit_type': unit.unit_type,
+                'block_hashes': unit.block_hashes,
+                'source_hash': unit.source_hash,
+                'context_signature': unit.context_signature,
+                'section_path': unit.section_path,
+                'translation': unit.translation
             })
 
         with open(cache_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
 
-    def cleanup_stale_cache(self, cache_data: CacheData, current_paragraph_hashes: List[str]) -> int:
-        """
-        Remove cached paragraphs and merge_units that no longer exist in the current document.
-        
-        Args:
-            cache_data: The cache data to clean up
-            current_paragraph_hashes: List of paragraph hashes from the current document
-            
-        Returns:
-            Number of removed items
-        """
-        current_hash_set = set(current_paragraph_hashes)
-        removed_count = 0
-        
-        stale_hashes = [h for h in cache_data.paragraphs.keys() if h not in current_hash_set]
-        for stale_hash in stale_hashes:
-            del cache_data.paragraphs[stale_hash]
-            removed_count += 1
-        
-        cache_data.merge_units = [
-            mu for mu in cache_data.merge_units
-            if all(h in current_hash_set for h in mu.hashes)
-        ]
-        
-        return removed_count
+    def replace_blocks(self, cache_data: CacheData, blocks: List[CachedBlock]):
+        cache_data.blocks = {}
+        for block in blocks:
+            block_hash = _compute_block_full_hash(block.content)
+            cache_data.blocks[block_hash] = block
 
-    def get_paragraph_content(self, cache_data: CacheData, para_hash: str) -> Optional[str]:
-        if para_hash in cache_data.paragraphs:
-            return cache_data.paragraphs[para_hash].content
-        return None
+    def replace_translation_units(self, cache_data: CacheData, units: List[TranslationUnit]):
+        cache_data.translation_units = units
 
-    def find_merge_unit_by_hash(self, cache_data: CacheData, para_hash: str) -> Optional[MergeUnit]:
-        for mu in cache_data.merge_units:
-            if para_hash in mu.hashes:
-                return mu
+    def find_translation_unit(
+        self,
+        cache_data: CacheData,
+        source_hash: str,
+        context_signature: str
+    ) -> Optional[TranslationUnit]:
+        for unit in cache_data.translation_units:
+            if unit.source_hash == source_hash and unit.context_signature == context_signature:
+                return unit
         return None
 
     def update_translation_memory(
@@ -212,3 +221,8 @@ def extract_english_terms(source: str, translation: str) -> List[Tuple[str, str]
             terms.append((term, term))
 
     return terms
+
+
+def _compute_block_full_hash(content: str) -> str:
+    import hashlib
+    return hashlib.sha256(content.encode('utf-8')).hexdigest()

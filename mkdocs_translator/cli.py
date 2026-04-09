@@ -5,8 +5,15 @@ import logging
 from datetime import datetime
 from .translator import DocumentTranslator
 from .utils import get_translatable_files, copy_resources, load_blacklist
-from .parser import parse_file_incremental, compute_doc_hash, is_pages_file, plan_merge_units, assemble_translation, PlannedMergeUnit
-from .cache_manager import CacheManager, CacheData, MergeUnit
+from .parser import (
+    parse_file_incremental,
+    compute_doc_hash,
+    is_pages_file,
+    plan_translation_units,
+    assemble_translation,
+    build_cached_blocks,
+)
+from .cache_manager import CacheManager, CacheData, TranslationUnit
 from tqdm import tqdm
 import concurrent.futures
 from functools import partial
@@ -164,10 +171,10 @@ def translate(source: str, target: str,
                         pbar.set_description(f"Worker {worker_id + 1}: ({current_file_num}/{total_files}) {relative_path.name} (使用缓存)")
                     pbar.update(1)
                 
-                _write_translation(cache.merge_units, target_file)
+                _write_translation(cache.translation_units, target_file)
                 return True
 
-            planned_units = plan_merge_units(paragraphs, cache.merge_units)
+            planned_units = plan_translation_units(paragraphs, cache.translation_units)
             
             total_units = len(planned_units)
             need_translate_count = sum(1 for u in planned_units if u.need_translate)
@@ -209,10 +216,13 @@ def translate(source: str, target: str,
                         )
                     
                     translation, usage_data = translator.translate_paragraph(
-                        unit.merged_content,
+                        unit.source_text,
                         translation_memory=cache.translation_memory,
+                        section_path=unit.section_path,
+                        context_before=unit.context_before,
+                        context_after=unit.context_after,
                         position=worker_id,
-                        desc=f"{relative_path}: merge_{idx}"
+                        desc=f"{relative_path}: unit_{idx}"
                     )
                     
                     unit.translation = translation
@@ -221,26 +231,32 @@ def translate(source: str, target: str,
                     cumulative_usage["completion_tokens"] += usage_data["completion_tokens"]
                     cumulative_usage["total_tokens"] += usage_data["total_tokens"]
                     
-                    cache_manager.extract_and_update_memory(cache, unit.merged_content, translation)
+                    cache_manager.extract_and_update_memory(cache, unit.source_text, translation)
                     
                     with _pbar_lock:
                         pbar.update(1)
 
-            cache.paragraphs.clear()
-            for para in paragraphs:
-                cache.paragraphs[para.content_hash] = type('ParagraphCache', (), {'content': para.content})()
-            
-            cache.merge_units = [
-                MergeUnit(hashes=u.hashes, translation=u.translation)
+            cache_manager.replace_blocks(cache, build_cached_blocks(paragraphs))
+
+            cache_manager.replace_translation_units(cache, [
+                TranslationUnit(
+                    unit_id=u.unit_id,
+                    unit_type=u.unit_type,
+                    block_hashes=u.block_hashes,
+                    source_hash=u.source_hash,
+                    context_signature=u.context_signature,
+                    section_path=u.section_path,
+                    translation=u.translation
+                )
                 for u in planned_units
-            ]
+            ])
             
             cache.source_doc_hash = doc_hash
             cache.last_translated = datetime.now().isoformat()
             
             cache_manager.save_cache(relative_path, cache)
             
-            _write_translation(cache.merge_units, target_file)
+            _write_translation(cache.translation_units, target_file)
 
             logging.info(f"文件翻译成功 - {relative_path}")
             return True
@@ -251,10 +267,10 @@ def translate(source: str, target: str,
             print(f"翻译文件 {relative_path} 时发生错误: {error_message}")
             return False
 
-    def _write_translation(merge_units: List[MergeUnit], target_file: Path):
+    def _write_translation(translation_units: List[TranslationUnit], target_file: Path):
         target_file.parent.mkdir(parents=True, exist_ok=True)
         with open(target_file, 'w', encoding='utf-8') as f:
-            f.write("\n\n".join(mu.translation for mu in merge_units if mu.translation))
+            f.write("\n\n".join(unit.translation for unit in translation_units if unit.translation))
 
     # 并行执行翻译
     global _completed_count, _error_count

@@ -240,6 +240,9 @@ class DocumentTranslator:
         self,
         text: str,
         translation_memory: Optional[List[Dict]] = None,
+        section_path: Optional[List[str]] = None,
+        context_before: str = "",
+        context_after: str = "",
         position: int = 0,
         desc: str = "Translating"
     ) -> Tuple[str, Dict]:
@@ -259,7 +262,12 @@ class DocumentTranslator:
             self.translation_logger.info(f"开始翻译段落 - {desc} - 文本长度: {len(text)} 字符")
 
             system_prompt = self._build_enhanced_prompt(translation_memory)
-            user_message = self._build_user_message(text)
+            user_message = self._build_user_message(
+                text,
+                section_path=section_path,
+                context_before=context_before,
+                context_after=context_after
+            )
 
             messages = [
                 {"role": "system", "content": system_prompt},
@@ -305,11 +313,21 @@ class DocumentTranslator:
 
         return "".join(prompt_parts)
 
-    def _build_user_message(self, text: str) -> str:
+    def _build_user_message(
+        self,
+        text: str,
+        section_path: Optional[List[str]] = None,
+        context_before: str = "",
+        context_after: str = ""
+    ) -> str:
         """Build user message for translation."""
+        section_context = " > ".join(section_path or [])
         return f"""<input>
 <input_content>{text}</input_content>
 <target_language>{self.target_lang}</target_language>
+<section_context>{section_context}</section_context>
+<context_before>{context_before}</context_before>
+<context_after>{context_after}</context_after>
 </input>"""
 
     def translate_text(self, text: str, position: int = 0, desc: str = "Translating") -> Tuple[str, Dict]:
