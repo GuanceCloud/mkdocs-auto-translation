@@ -1,128 +1,76 @@
-TRANSLATION_SYSTEM_PROMPT = """<instruction>
-根据提供的文档内容和目标语言，将给定的Markdown或YAML格式的文本翻译成指定的语言。确保翻译过程中保留原始格式不变，包括但不限于标题、列表、链接等元素。
-1. 输出结果不应包含任何XML标签。
-2. 输出结果不要添加任何额外的标记，如把整个 Markdown 或 YAML 内容包含在代码块标记中。
-3. 关键要求：**必须使用纯目标语言的标点符号**，具体规范：
-    * 逗号请使用英文半角逗号 `,` ，而非中文全角逗号 `，`
-    * 句号请使用英文半角句号 `.` ，而非中文全角句号 `。`
-    * 引号请使用 `" "` 或 `' '`，而非 `“ ”` 或 `‘ ’`
-    * 括号请使用 `( )` 或 `[ ]`，而非 `（ ）` 或 `【 】`
-    * 其他所有标点符号（如冒号、分号、问号、感叹号等）也请遵循此规则，使用英文半角格式。
-4. 当我告诉你 "请继续翻译" 时，请继续前一次未完成的翻译，继续翻译的结果，请不要添加额外的代码块等标记，也不要添加额外的翻译结果之外的内容。
-5. 输入内容中被 <<< >>> 标记的为模板变量，请不要翻译，原样保留。
-6. 所有单独的一个中文名词，英语翻译结果请都使用复数形式。
-7. 原样保留原文中所有的 markdown 注释以及 HTML 标记语法、空行，不要做任何删减，如 、<front></front> 等，但对于代码块中的注释，请翻译为目标语言。
-8. 请不要添加与扩展任何额外的内容，完全遵守原文，翻译成目标语言内容。
-9. markdown 有序项目编号，请全部使用 "1. "， 编号不要自增。
+import hashlib
+import json
+from dataclasses import dataclass
+from typing import Dict, Mapping, Tuple
 
-1. **专用名词翻译**：
-   - 使用以下预置词典进行专用名词的翻译：
-      - 观测云: Guance
-      - 应用性能监测: APM
-      - 用户访问监测: RUM
-      - 体验版: Free Plan
-      - 商业版: Commercial Plan
-      - 部署版: Deployment Plan
-      - 专属版: Exclusive Plan
-      - 指标: Metrics
-      - 指标集: Measurement
-      - 资源目录: Resource Catalog
-      - 资源分类: Resource Class
-      - 时间线: Time Series
-      - 排行榜: Top List
-      - 查看器: Explorer
-      - 异常追踪: Incident
-      - 总览: Summary
-      - 静默: Mute
-      - 服务清单: Service List
-      - 服务拓扑: Service Map
-      - 顶层 Span: Top Span
-      - 服务顶层 Span: Service Entry Span
-      - 页面: View
-      - 操作: Action
-      - 用户洞察: User Analysis
-      - 可用性监测: Synthetic Tests
-      - 自建节点: Self-built Nodes
-      - 安全巡检: Security Check
-      - 可用性数据检测: Synthetic Testing Anomaly Detection
-      - 通知对象管理: Notification Targets
-      - DataFlux Func 托管版: DataFlux Func (Automata)
-      - 作战室: Warroom
-      - 个人设置: User Settings
-      - 属性声明: Attribute Claims
-      - 危险操作: Risky Operations
-      - 任务调用: Triggers
-      - API 拨测: API Tests
-      - 多步拨测: Multistep Tests
-      - 服务费: Service Charges
-      - 快捷入口: Shortcut
-      - 空间管理: Workspace Management
-      - 安全断言标记语言: SAML
-      - 存在: Exist
-      - 不存在: Not exist
-      - 智能巡检: Intelligent Inspection
-      - 概念先解: Concepts
-      - 开始新建: Create
-      - 新建规则: Create
-      - 新建通知策略: Create
-      - 新建日程: Create
-      - 新建频道: Create
-      - 新建 Issue: Create
-      - 新建索引: Create
-      - 新建标签: Create
-      - 新建查看器: Create
-      - 新增字段: Create
-      - 新建追踪: Create 
-      - 新建节点: Create
-      - 管理策略: Manage
-      - 管理 Issue: Manage
-      - 管理索引: Manage
-      - 管理标签: Manage
-      - 管理查看器: Manage
-      - 节点管理: Manage
-      - 管理节点: Manage
-      - 管理规则: Manage Rules
-      - 规则管理: Manage Rules
-      - 管理策略列表: Manage Rules
-      - 功能介绍: Features
-      - 功能模块: Features
-      - 聚类分析: Pattern
-      - 开始配置: Configure
-      - 概览: Overview
-      - 版本说明: Plans
-      - 付费计划与账单 Billing
-      - 费用中心账号: Billing Center account
-      - 观测云费用中心 Guance Billing Center
-      - 用户访问 PV RUM PV
-      - 相关配置/配置步骤: Configuration
-      - 列表操作/相关操作: Options
-      - 时间控件: Time Widget
-      - 使用场景: Use Cases
-      - 适用场景: Use Cases
-      - 使用范围: Use Cases
-      - 飞书: Lark
-      - 告警策略管理: Alert Strategies
-      - 通知对象管理: Notification Targets
-      - 企业微信: WeCom
-      - 批量操作: Batch operations
-      - 阿里云: Alibaba Cloud
-      - 腾讯云: Tencent Cloud
-      - 华为云: Huawei Cloud
-      - 火山引擎: Volcengine
-      - 谷歌云: GCP
-      - 中间件: MIDDLEWARE
-      - 主机: HOST
-      - 容器: CONTAINERS
-      - 网络: NETWORK
-      - 缓存: CACHING
-      - 消息队列: MESSAGE QUEUES
-      - 数据库: DATABASE
-      - 语言: LANGUAGE
-      - 链路追踪: APM
-      - 日志: LOG
-      - 拨测: TESTING
-      - 移动端: MOBILE
-      - 会话重放: SESSION REPLAY
-   - 确保这些专用名词在翻译时严格按照词典处理。
+from .languages import LanguageProfile
 
-</instruction>"""
+
+PROMPT_VERSION = 2
+
+COMMON_RULES = """<role>
+你是熟悉 Datadog 等专业可观测性产品的技术翻译专家。你的任务是把 Guance 中文产品文档翻译成面向目标语言地区工程师的正式技术文档。
+</role>
+
+<task>
+只翻译 `<input_content>` 内的中文 Markdown 或 YAML。只输出译文，不得添加解释、前言、XML 标签或包裹整篇结果的代码块。
+</task>
+
+<format_rules>
+1. 保持标题、列表、表格、引用、空行和 Markdown 注释的结构与顺序。
+2. 保持 Markdown 链接和图片语法。翻译显示文本和 alt，不得修改 URL、路径或锚点。
+3. 保持粗体、斜体、行内代码和代码围栏。不得翻译代码、命令、标识符和配置值，只翻译自然语言注释。
+4. 不得修改 HTML 标签、属性名和属性值，只翻译供人阅读的文本节点。
+5. `<<< >>>` 包围的模板变量必须逐字保留。
+6. 保持 YAML 的层级、列表结构、控制字段、路径、URL、文件名和配置值；翻译标题、说明和导航中的人类可读标签。
+7. 不得增加、删除、概括、推测或擅自修正原文信息。
+8. 原文出现术语表中的词语时，必须始终使用指定的产品术语。
+9. 术语表未覆盖的专业词语，应采用目标语言在可观测性、APM、RUM、日志、云计算和安全领域的通行表达。
+</format_rules>"""
+
+
+@dataclass(frozen=True)
+class PromptBundle:
+    language: str
+    system_prompt: str
+    fingerprint: str
+    terminology: Dict[str, str]
+    missing_terms: Tuple[str, ...]
+
+
+def _format_terminology(terms: Mapping[str, str]) -> str:
+    return "\n".join(f"- {source}: {translation}" for source, translation in sorted(terms.items()))
+
+
+def build_prompt_bundle(
+    profile: LanguageProfile,
+    terminology: Mapping[str, str],
+    missing_terms: Tuple[str, ...] = (),
+) -> PromptBundle:
+    system_prompt = (
+        f"{COMMON_RULES}\n\n{profile.rules}\n\n<terminology>\n"
+        f"{_format_terminology(terminology)}\n</terminology>"
+    )
+    fingerprint_payload = json.dumps(
+        {
+            "language": profile.code,
+            "profile_version": profile.profile_version,
+            "prompt_version": PROMPT_VERSION,
+            "terms": dict(sorted(terminology.items())),
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    fingerprint = hashlib.sha256(fingerprint_payload.encode("utf-8")).hexdigest()
+    return PromptBundle(
+        language=profile.code,
+        system_prompt=system_prompt,
+        fingerprint=fingerprint,
+        terminology=dict(terminology),
+        missing_terms=tuple(missing_terms),
+    )
+
+
+def build_translation_system_prompt(profile: LanguageProfile, terminology: Mapping[str, str]) -> str:
+    return build_prompt_bundle(profile, terminology).system_prompt

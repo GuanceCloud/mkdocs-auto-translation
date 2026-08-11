@@ -1,0 +1,1 @@
+"""Bundled translation data files."""

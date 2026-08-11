@@ -1,0 +1,430 @@
+version: 1
+terms:
+  "观测云":
+    en: "Guance"
+    ja: "Guance"
+    ko: "Guance"
+  "应用性能监测":
+    en: "APM"
+    ja: "APM"
+    ko: "APM"
+  "用户访问监测":
+    en: "RUM"
+    ja: "RUM"
+    ko: "RUM"
+  "体验版":
+    en: "Free Plan"
+    ja: "無料プラン"
+    ko: "무료 플랜"
+  "商业版":
+    en: "Commercial Plan"
+    ja: "商用プラン"
+    ko: "상용 플랜"
+  "部署版":
+    en: "Deployment Plan"
+    ja: "デプロイメントプラン"
+    ko: "배포 플랜"
+  "专属版":
+    en: "Exclusive Plan"
+    ja: "専用プラン"
+    ko: "전용 플랜"
+  "指标":
+    en: "Metrics"
+    ja: "メトリクス"
+    ko: "메트릭"
+  "指标集":
+    en: "Measurement"
+    ja: "メジャーメント"
+    ko: "측정값"
+  "资源目录":
+    en: "Resource Catalog"
+    ja: "リソースカタログ"
+    ko: "리소스 카탈로그"
+  "资源分类":
+    en: "Resource Class"
+    ja: "リソースクラス"
+    ko: "리소스 클래스"
+  "时间线":
+    en: "Time Series"
+    ja: "時系列"
+    ko: "시계열"
+  "排行榜":
+    en: "Top List"
+    ja: "トップリスト"
+    ko: "상위 목록"
+  "查看器":
+    en: "Explorer"
+    ja: "エクスプローラー"
+    ko: "탐색기"
+  "异常追踪":
+    en: "Incident"
+    ja: "インシデント"
+    ko: "인시던트"
+  "总览":
+    en: "Summary"
+    ja: "サマリー"
+    ko: "요약"
+  "静默":
+    en: "Mute"
+    ja: "ミュート"
+    ko: "음소거"
+  "服务清单":
+    en: "Service List"
+    ja: "サービスリスト"
+    ko: "서비스 목록"
+  "服务拓扑":
+    en: "Service Map"
+    ja: "サービスマップ"
+    ko: "서비스 맵"
+  "顶层 Span":
+    en: "Top Span"
+    ja: "トップレベルスパン"
+    ko: "최상위 수준 스팬"
+  "服务顶层 Span":
+    en: "Service Entry Span"
+    ja: "サービスエントリスパン"
+    ko: "서비스 엔트리 스팬"
+  "页面":
+    en: "View"
+    ja: "ビュー"
+    ko: "보기"
+  "操作":
+    en: "Action"
+    ja: "アクション"
+    ko: "액션"
+  "用户洞察":
+    en: "User Analysis"
+    ja: "ユーザー分析"
+    ko: "사용자 분석"
+  "可用性监测":
+    en: "Synthetic Tests"
+    ja: "Synthetic モニタリング"
+    ko: "신서틱 모니터링"
+  "自建节点":
+    en: "Self-built Nodes"
+    ja: "セルフホストノード"
+    ko: "자체 호스팅 노드"
+  "安全巡检":
+    en: "Security Check"
+    ja: "セキュリティチェック"
+    ko: "보안 점검"
+  "可用性数据检测":
+    en: "Synthetic Testing Anomaly Detection"
+    ja: "Synthetic テスト異常検知"
+    ko: "신서틱 테스트 이상 탐지"
+  "通知对象管理":
+    en: "Notification Targets"
+    ja: "通知先管理"
+    ko: "알림 대상 관리"
+  "DataFlux Func 托管版":
+    en: "DataFlux Func (Automata)"
+    ja: "DataFlux Func (Automata)"
+    ko: "DataFlux Func (Automata)"
+  "作战室":
+    en: "Warroom"
+    ja: "ウォールーム"
+    ko: "워룸"
+  "个人设置":
+    en: "User Settings"
+    ja: "ユーザー設定"
+    ko: "사용자 설정"
+  "属性声明":
+    en: "Attribute Claims"
+    ja: "属性クレーム"
+    ko: "속성 클레임"
+  "危险操作":
+    en: "Risky Operations"
+    ja: "危険な操作"
+    ko: "위험한 작업"
+  "任务调用":
+    en: "Triggers"
+    ja: "トリガー"
+    ko: "트리거"
+  "API 拨测":
+    en: "API Tests"
+    ja: "API テスト"
+    ko: "API 테스트"
+  "多步拨测":
+    en: "Multistep Tests"
+    ja: "マルチステップ API テスト"
+    ko: "다단계 API 테스트"
+  "服务费":
+    en: "Service Charges"
+    ja: "サービス料金"
+    ko: "서비스 요금"
+  "快捷入口":
+    en: "Shortcut"
+    ja: "ショートカット"
+    ko: "바로가기"
+  "空间管理":
+    en: "Workspace Management"
+    ja: "ワークスペース管理"
+    ko: "워크스페이스 관리"
+  "安全断言标记语言":
+    en: "SAML"
+    ja: "SAML"
+    ko: "SAML"
+  "存在":
+    en: "Exist"
+    ja: "存在する"
+    ko: "존재함"
+  "不存在":
+    en: "Not exist"
+    ja: "存在しない"
+    ko: "존재하지 않음"
+  "智能巡检":
+    en: "Intelligent Inspection"
+    ja: "インテリジェントインスペクション"
+    ko: "지능형 점검"
+  "概念先解":
+    en: "Concepts"
+    ja: "概念"
+    ko: "개념"
+  "开始新建":
+    en: "Create"
+    ja: "作成"
+    ko: "생성"
+  "新建规则":
+    en: "Create"
+    ja: "ルールを作成"
+    ko: "규칙 생성"
+  "新建通知策略":
+    en: "Create"
+    ja: "通知ポリシーを作成"
+    ko: "알림 정책 생성"
+  "新建日程":
+    en: "Create"
+    ja: "スケジュールを作成"
+    ko: "일정 생성"
+  "新建频道":
+    en: "Create"
+    ja: "チャンネルを作成"
+    ko: "채널 생성"
+  "新建 Issue":
+    en: "Create"
+    ja: "Issue を作成"
+    ko: "Issue 생성"
+  "新建索引":
+    en: "Create"
+    ja: "インデックスを作成"
+    ko: "인덱스 생성"
+  "新建标签":
+    en: "Create"
+    ja: "タグを作成"
+    ko: "태그 생성"
+  "新建查看器":
+    en: "Create"
+    ja: "エクスプローラーを作成"
+    ko: "탐색기 생성"
+  "新增字段":
+    en: "Create"
+    ja: "フィールドを追加"
+    ko: "필드 추가"
+  "新建追踪":
+    en: "Create"
+    ja: "トレースを作成"
+    ko: "트레이스 생성"
+  "新建节点":
+    en: "Create"
+    ja: "ノードを作成"
+    ko: "노드 생성"
+  "管理策略":
+    en: "Manage"
+    ja: "ポリシーを管理"
+    ko: "정책 관리"
+  "管理 Issue":
+    en: "Manage"
+    ja: "Issue を管理"
+    ko: "Issue 관리"
+  "管理索引":
+    en: "Manage"
+    ja: "インデックスを管理"
+    ko: "인덱스 관리"
+  "管理标签":
+    en: "Manage"
+    ja: "タグを管理"
+    ko: "태그 관리"
+  "管理查看器":
+    en: "Manage"
+    ja: "エクスプローラーを管理"
+    ko: "탐색기 관리"
+  "节点管理":
+    en: "Manage"
+    ja: "ノード管理"
+    ko: "노드 관리"
+  "管理节点":
+    en: "Manage"
+    ja: "ノードを管理"
+    ko: "노드 관리"
+  "管理规则":
+    en: "Manage Rules"
+    ja: "ルール管理"
+    ko: "규칙 관리"
+  "规则管理":
+    en: "Manage Rules"
+    ja: "ルール管理"
+    ko: "규칙 관리"
+  "管理策略列表":
+    en: "Manage Rules"
+    ja: "ポリシーリスト管理"
+    ko: "정책 목록 관리"
+  "功能介绍":
+    en: "Features"
+    ja: "機能"
+    ko: "기능"
+  "功能模块":
+    en: "Features"
+    ja: "機能"
+    ko: "기능"
+  "聚类分析":
+    en: "Pattern"
+    ja: "パターン"
+    ko: "패턴"
+  "开始配置":
+    en: "Configure"
+    ja: "設定"
+    ko: "구성"
+  "概览":
+    en: "Overview"
+    ja: "概要"
+    ko: "개요"
+  "版本说明":
+    en: "Plans"
+    ja: "プラン"
+    ko: "요금제"
+  "付费计划与账单":
+    en: "Plans & Billing"
+    ja: "料金プランと請求"
+    ko: "요금제 및 청구"
+  "费用中心账号":
+    en: "Billing Center account"
+    ja: "請求センターアカウント"
+    ko: "청구 센터 계정"
+  "观测云费用中心":
+    en: "Guance Billing Center"
+    ja: "Guance 請求センター"
+    ko: "Guance 청구 센터"
+  "用户访问 PV":
+    en: "RUM PV"
+    ja: "RUM PV"
+    ko: "RUM PV"
+  "相关配置":
+    en: "Configuration"
+    ja: "関連設定"
+    ko: "관련 구성"
+  "配置步骤":
+    en: "Configuration"
+    ja: "設定手順"
+    ko: "구성 단계"
+  "列表操作":
+    en: "Options"
+    ja: "リスト操作"
+    ko: "목록 작업"
+  "相关操作":
+    en: "Options"
+    ja: "関連操作"
+    ko: "관련 작업"
+  "时间控件":
+    en: "Time Widget"
+    ja: "時間ウィジェット"
+    ko: "시간 위젯"
+  "使用场景":
+    en: "Use Cases"
+    ja: "ユースケース"
+    ko: "사용 사례"
+  "适用场景":
+    en: "Use Cases"
+    ja: "ユースケース"
+    ko: "사용 사례"
+  "使用范围":
+    en: "Use Cases"
+    ja: "ユースケース"
+    ko: "사용 사례"
+  "飞书":
+    en: "Lark"
+    ja: "Lark"
+    ko: "Lark"
+  "告警策略管理":
+    en: "Alert Strategies"
+    ja: "アラート戦略管理"
+    ko: "알림 전략 관리"
+  "企业微信":
+    en: "WeCom"
+    ja: "WeCom"
+    ko: "WeCom"
+  "批量操作":
+    en: "Batch operations"
+    ja: "一括操作"
+    ko: "일괄 작업"
+  "阿里云":
+    en: "Alibaba Cloud"
+    ja: "Alibaba Cloud"
+    ko: "Alibaba Cloud"
+  "腾讯云":
+    en: "Tencent Cloud"
+    ja: "Tencent Cloud"
+    ko: "Tencent Cloud"
+  "华为云":
+    en: "Huawei Cloud"
+    ja: "Huawei Cloud"
+    ko: "Huawei Cloud"
+  "火山引擎":
+    en: "Volcengine"
+    ja: "Volcengine"
+    ko: "Volcengine"
+  "谷歌云":
+    en: "GCP"
+    ja: "Google Cloud"
+    ko: "Google Cloud"
+  "中间件":
+    en: "MIDDLEWARE"
+    ja: "ミドルウェア"
+    ko: "미들웨어"
+  "主机":
+    en: "HOST"
+    ja: "ホスト"
+    ko: "호스트"
+  "容器":
+    en: "CONTAINERS"
+    ja: "コンテナ"
+    ko: "컨테이너"
+  "网络":
+    en: "NETWORK"
+    ja: "ネットワーク"
+    ko: "네트워크"
+  "缓存":
+    en: "CACHING"
+    ja: "キャッシュ"
+    ko: "캐시"
+  "消息队列":
+    en: "MESSAGE QUEUES"
+    ja: "メッセージキュー"
+    ko: "메시지 큐"
+  "数据库":
+    en: "DATABASE"
+    ja: "データベース"
+    ko: "데이터베이스"
+  "语言":
+    en: "LANGUAGE"
+    ja: "言語"
+    ko: "언어"
+  "链路追踪":
+    en: "APM"
+    ja: "APM"
+    ko: "APM"
+  "日志":
+    en: "LOG"
+    ja: "ログ"
+    ko: "로그"
+  "拨测":
+    en: "TESTING"
+    ja: "テスト"
+    ko: "테스트"
+  "移动端":
+    en: "MOBILE"
+    ja: "モバイル"
+    ko: "모바일"
+  "会话重放":
+    en: "SESSION REPLAY"
+    ja: "セッションリプレイ"
+    ko: "세션 리플레이"
