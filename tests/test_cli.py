@@ -93,6 +93,100 @@ class CliTests(unittest.TestCase):
             self.assertEqual(1, FakeTranslator.calls)
             self.assertIn("skipped=1", second.output)
 
+    def test_glossary_change_does_not_retranslate_existing_document(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "zh"
+            target = root / "en"
+            glossary = root / "glossary.yml"
+            source.mkdir()
+            (source / "index.md").write_text("服务拓扑", encoding="utf-8")
+            glossary.write_text(
+                "version: 1\nterms:\n  服务拓扑:\n    en: Service Map A\n",
+                encoding="utf-8",
+            )
+            args = [
+                "--source", str(source),
+                "--target", str(target),
+                "--target-language", "en",
+                "--glossary", str(glossary),
+                "--api-key", "dummy",
+            ]
+            runner = CliRunner()
+            with patch("mkdocs_translator.cli.DocumentTranslator", FakeTranslator):
+                first = runner.invoke(translate, args)
+                glossary.write_text(
+                    "version: 1\nterms:\n  服务拓扑:\n    en: Service Map B\n",
+                    encoding="utf-8",
+                )
+                second = runner.invoke(translate, args)
+
+            self.assertEqual(0, first.exit_code, first.output)
+            self.assertEqual(0, second.exit_code, second.output)
+            self.assertEqual(1, FakeTranslator.calls)
+            self.assertIn("skipped=1", second.output)
+
+    def test_blank_sources_are_copied_without_translation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "zh"
+            target = root / "docs"
+            source.mkdir()
+            (source / "empty.md").write_bytes(b"")
+            (source / "whitespace.md").write_text(" \n\t", encoding="utf-8")
+            stale_target = target / "en" / "empty.md"
+            stale_target.parent.mkdir(parents=True)
+            stale_target.write_text("stale translation", encoding="utf-8")
+            args = [
+                "--source", str(source),
+                "--target", str(target),
+                "--target-languages", "en,ja,ko",
+                "--api-key", "dummy",
+            ]
+
+            with patch("mkdocs_translator.cli.DocumentTranslator", FakeTranslator):
+                first = CliRunner().invoke(translate, args)
+                second = CliRunner().invoke(translate, args)
+
+            self.assertEqual(0, first.exit_code, first.output)
+            self.assertEqual(0, second.exit_code, second.output)
+            self.assertEqual(0, FakeTranslator.calls)
+            for language in ("en", "ja", "ko"):
+                self.assertEqual(b"", (target / language / "empty.md").read_bytes())
+                self.assertEqual(" \n\t", (target / language / "whitespace.md").read_text(encoding="utf-8"))
+                metadata = json.loads(
+                    (target / language / ".mkdocs-translator" / "metadata.json").read_text(encoding="utf-8")
+                )
+                self.assertEqual("success", metadata["files"]["empty.md"]["status"])
+                self.assertEqual("success", metadata["files"]["whitespace.md"]["status"])
+            self.assertIn("total: success=0, failed=0, skipped=6", first.output)
+            self.assertIn("total: success=0, failed=0, skipped=6", second.output)
+
+    def test_blank_source_becoming_non_blank_is_translated(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "zh"
+            target = root / "en"
+            source.mkdir()
+            source_file = source / "index.md"
+            source_file.write_text("\n", encoding="utf-8")
+            args = [
+                "--source", str(source),
+                "--target", str(target),
+                "--target-language", "en",
+                "--api-key", "dummy",
+            ]
+
+            with patch("mkdocs_translator.cli.DocumentTranslator", FakeTranslator):
+                first = CliRunner().invoke(translate, args)
+                source_file.write_text("中文内容", encoding="utf-8")
+                second = CliRunner().invoke(translate, args)
+
+            self.assertEqual(0, first.exit_code, first.output)
+            self.assertEqual(0, second.exit_code, second.output)
+            self.assertEqual(1, FakeTranslator.calls)
+            self.assertEqual("en: translated", (target / "index.md").read_text(encoding="utf-8"))
+
     def test_multi_language_uses_language_subdirectories_and_global_worker_limit(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -196,6 +290,35 @@ class CliTests(unittest.TestCase):
             )
             self.assertEqual(2, conflict.exit_code)
             self.assertEqual(2, unsafe.exit_code)
+
+    def test_no_check_structure_is_available_and_warns(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "zh"
+            source.mkdir()
+            (source / "index.md").write_text("中文", encoding="utf-8")
+            captured = {}
+
+            class CapturingTranslator(FakeTranslator):
+                def __init__(self, target_lang, **kwargs):
+                    captured.update(kwargs)
+                    super().__init__(target_lang, **kwargs)
+
+            with patch("mkdocs_translator.cli.DocumentTranslator", CapturingTranslator):
+                result = CliRunner().invoke(
+                    translate,
+                    [
+                        "--source", str(source),
+                        "--target", str(root / "en"),
+                        "--target-language", "en",
+                        "--no-check-structure",
+                        "--api-key", "dummy",
+                    ],
+                )
+
+            self.assertEqual(0, result.exit_code, result.output)
+            self.assertIn("Structure protection and validation are disabled", result.output)
+            self.assertFalse(captured["check_structure"])
 
     def test_one_language_failure_does_not_cancel_other_tasks(self):
         with tempfile.TemporaryDirectory() as directory:

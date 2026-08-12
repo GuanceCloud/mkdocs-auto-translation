@@ -14,8 +14,10 @@ OBSERVABILITY_TERMINOLOGY = load_terminology().terms
 
 def build_translation_system_prompt(language: str) -> str:
     profile = get_profile(language)
-    terms, _ = load_terminology().for_language(profile.code)
-    return _build_prompt(profile, terms)
+    terminology = load_terminology()
+    terms, _ = terminology.for_language(profile.code)
+    concepts, _ = terminology.concepts_for_language(profile.code)
+    return _build_prompt(profile, terms, concepts)
 
 
 JAPANESE_TRANSLATION_SYSTEM_PROMPT = build_translation_system_prompt("ja")

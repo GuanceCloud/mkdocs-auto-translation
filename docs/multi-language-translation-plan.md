@@ -196,16 +196,24 @@ docs/
 内置和自定义术语表都使用 YAML：
 
 ```yaml
-version: 1
+version: 2
 terms:
   观测云:
     en: Guance
     ja: Guance
     ko: Guance
   应用性能监测:
-    en: APM
-    ja: APM
-    ko: APM
+    en:
+      full: Application Performance Monitoring
+      short: APM
+    ja:
+      full: アプリケーションパフォーマンスモニタリング
+      short: APM
+    ko:
+      full: 애플리케이션 성능 모니터링
+      short: APM
+    usage: first_mention
+    ui: short
   查看器:
     en: Explorer
     ja: エクスプローラー
@@ -216,6 +224,8 @@ terms:
 
 - 现有英文硬编码术语全部迁移到内置 YAML。
 - Guance、APM、RUM、DataKit、云厂商名称等稳定品牌或行业缩写可在三种语言中保持一致。
+- 普通固定词条兼容 `version: 1`；需要区分全称和缩写的概念词使用 `version: 2`。
+- `first_mention` 概念词在每篇文档首次出现中文全称时输出“全称（缩写）”，后续使用缩写；紧凑 UI 使用 `ui` 指定的形式。
 - 自定义词表按中文源词合并内置词表，相同语言的自定义值优先。
 - 每次任务只把当前目标语言的词条注入提示词。
 - 当前目标语言缺少译法时，将该词交给模型翻译，并在任务开始时汇总记录一次告警。
@@ -267,21 +277,22 @@ terms:
 - 公共及语言专属提示词版本。
 - 当前语言实际生效的术语表。
 
-模型名称和 API 地址不进入 fingerprint，切换模型不会自动触发全量重翻。
+模型名称和 API 地址不进入 fingerprint。Prompt、术语表、模型和 API 地址的变化均不会自动触发已有文档重新翻译。
 
-fingerprint 使用稳定 JSON 序列化后计算 SHA-256：包含标准语言代码、语言 profile 版本、Prompt 版本，以及按中文源词排序的当前语言有效术语。其他语言词条的变化不得使本语言状态失效。每条成功文件记录同时保存其 fingerprint，避免一次运行中途终止后把尚未更新的文件误判为有效。
+fingerprint 使用稳定 JSON 序列化后计算 SHA-256：包含标准语言代码、语言 profile 版本、Prompt 版本，以及按中文源词排序的当前语言有效术语。该值保存在运行状态和文件记录中，仅用于审计当时使用的翻译配置，不参与增量翻译判断。
 
 ### 7.3 增量判断
 
 文件只有同时满足以下条件才允许跳过：
 
 - 元数据语言与本次目标语言一致。
-- translation fingerprint 一致。
 - 文件上次状态为 `success`。
 - 当前中文源文件 hash 与记录一致。
 - 目标译文文件仍然存在。
 
 任意条件不满足都需要重新翻译。
+
+Prompt、专业词典、模型或 API 配置发生变化时，不会使已有成功译文失效。需要应用新词典的历史文档，应修改对应中文源文件，或删除对应目标译文后重新运行。
 
 如果目标目录已经绑定其他目标语言，任务必须失败并提示使用新的目标目录，禁止不同语言相互覆盖。
 
@@ -303,7 +314,7 @@ fingerprint 使用稳定 JSON 序列化后计算 SHA-256：包含标准语言代
 4. 旧失败记录、hash 已变化记录和目标译文缺失记录不导入，由本次任务正常重新翻译。
 5. 将通过验证的记录转换为新版 `files` 结构，写入目标目录 `.mkdocs-translator/metadata.json`，同时写入 `target_language: en`、当前 translation fingerprint 和 `legacy_migration` 摘要。
 6. 新 metadata 通过临时文件和原子替换一次性提交；提交失败时不得留下半份迁移状态。
-7. 迁移完成后立即按新版增量规则再次判断文件。导入记录以迁移时的当前 fingerprint 作为基线，后续 prompt 或英文术语表再次变化时正常触发重翻。
+7. 迁移完成后立即按新版增量规则再次判断文件。后续 Prompt 或英文术语表变化不会触发导入记录重新翻译。
 
 迁移具有幂等性：只要目标目录中的新版 metadata 已存在，后续运行就不再读取旧 metadata。即使首次迁移导入 0 个文件，也要写入完成标记，避免每次重复尝试。
 
@@ -431,5 +442,5 @@ fingerprint 使用稳定 JSON 序列化后计算 SHA-256：包含标准语言代
 
 - 缓存继续存放在各语言目标目录中。
 - 缓存数据包含标准目标语言。
-- 缓存有效性包含语言 profile 和当前语言术语 fingerprint。
+- 缓存有效性只由源内容、成功状态和目标译文是否存在决定；语言 profile 和术语 fingerprint 仅用于审计。
 - 不允许不同语言复用同一段落译文缓存。

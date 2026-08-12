@@ -11,7 +11,7 @@ mkdocs_translator/prompts.py
 
 `terminology.yml` 是唯一内置词典来源，`prompts.py` 根据语言 profile 和当前语言有效词条动态生成 system prompt。`multilingual_prompts.py` 只保留对准备阶段导出名称的兼容引用，不再保存另一份词典。
 
-当前词典包含 107 个规范化中文词条，每个词条都包含 `en`、`ja`、`ko` 三个值，三种语言均已接入正式翻译流程。
+当前词典包含 154 个规范化中文词条，每个词条都包含 `en`、`ja`、`ko` 三个值，三种语言均已接入正式翻译流程。普通词条使用固定译文；APM、RUM 这类概念词同时保存全称、缩写和使用策略。
 
 ## 2. 整理原则
 
@@ -20,6 +20,8 @@ mkdocs_translator/prompts.py
 - 产品功能名优先使用可观测性行业术语，不做逐字翻译。
 - UI 按钮和菜单使用简短名词或动作词，不翻译成长句。
 - 同一概念不混用音译和意译。
+- 宽泛普通词不进入强制词典，优先收录“日志查看器”“页面性能”等完整专业短语。
+- APM、RUM 在每篇 Markdown 标题或正文首次出现中文全称时采用“全称（缩写）”，后续采用缩写；导航和其他紧凑 UI 只使用缩写。
 - 日语正文使用正式、自然的 `です・ます` 文体；韩语正文使用正式的 `합니다` 文体。
 - 日语使用自然的日文标点，韩语使用自然的韩文技术文档标点，不继承现有英文 prompt 的半角标点和复数规则。
 
@@ -27,20 +29,21 @@ mkdocs_translator/prompts.py
 
 | 中文 | 英文对照 | 日语 | 韩语 | 说明 |
 | --- | --- | --- | --- | --- |
-| 应用性能监测 | APM | APM | APM | 行业标准缩写 |
-| 用户访问监测 | RUM | RUM | RUM | 行业标准缩写 |
-| 指标 | Metrics | メトリクス | 메트릭 | 官方可观测性用语 |
+| 应用性能监测 | Application Performance Monitoring (APM) | アプリケーションパフォーマンスモニタリング（APM） | 애플리케이션 성능 모니터링(APM) | 首次出现用全称加缩写，后续/UI 使用 APM |
+| 用户访问监测 | Real User Monitoring (RUM) | リアルユーザーモニタリング（RUM） | 실제 사용자 모니터링(RUM) | 首次出现用全称加缩写，后续/UI 使用 RUM |
+| 指标集 | Measurement | メジャーメント | 메저먼트 | Guance/InfluxDB 数据模型实体，不是“测量值” |
 | 时间线 | Time Series | 時系列 | 시계열 | 按现有英文语义处理为时序数据 |
 | 排行榜 | Top List | トップリスト | 상위 목록 | 采用 Datadog 可视化名称 |
 | 查看器 | Explorer | エクスプローラー | 탐색기 | 采用 Datadog Explorer 用语 |
 | 异常追踪 | Incident | インシデント | 인시던트 | 按现有英文产品含义处理 |
 | 静默 | Mute | ミュート | 음소거 | 采用监控告警领域用语 |
 | 服务拓扑 | Service Map | サービスマップ | 서비스 맵 | 采用 Datadog APM 用语 |
-| 顶层 Span | Top Span | トップレベルスパン | 최상위 수준 스팬 | 与 root span 区分 |
+| 顶层 Span | Top-level Span | トップレベルスパン | 최상위 스팬 | 与 root span 区分 |
 | 服务顶层 Span | Service Entry Span | サービスエントリスパン | 서비스 엔트리 스팬 | 采用 Datadog APM 用语 |
-| 页面 | View | ビュー | 보기 | 按 RUM 事件类型处理 |
-| 操作 | Action | アクション | 액션 | 按 RUM 事件类型处理 |
-| 可用性监测 | Synthetic Tests | Synthetic モニタリング | 신서틱 모니터링 | 采用 Synthetic Monitoring 产品术语 |
+| 页面性能 | Page Performance | ページパフォーマンス | 페이지 성능 | 避免把普通“页面”强制翻译成 RUM View |
+| 日志查看器 | Log Explorer | ログエクスプローラー | 로그 탐색기 | 采用 Datadog Explorer 用语 |
+| 链路追踪 | Distributed Tracing | 分散型トレーシング | 분산 추적 | 不再错误映射为 APM |
+| 可用性监测 | Synthetic Monitoring | Synthetic モニタリング | 신서틱 모니터링 | 采用 Synthetic Monitoring 产品术语 |
 | API 拨测 | API Tests | API テスト | API 테스트 | Synthetic 产品术语 |
 | 多步拨测 | Multistep Tests | マルチステップ API テスト | 다단계 API 테스트 | 采用日、韩官方用语，不强行统一音译 |
 | 作战室 | Warroom | ウォールーム | 워룸 | 事件响应领域通用名称 |
@@ -63,12 +66,11 @@ mkdocs_translator/prompts.py
 
 | 中文 | 日语建议 | 韩语建议 | 原因 |
 | --- | --- | --- | --- |
-| 指标集 | メジャーメント | 측정값 | Guance 数据模型名称 |
+| 指标集 | メジャーメント | 메저먼트 | Guance 数据模型名称 |
 | 自建节点 | セルフホストノード | 자체 호스팅 노드 | 保留“节点”产品语义，没有替换成 Datadog 的 Private Location |
 | 智能巡检 | インテリジェントインスペクション | 지능형 점검 | Guance 功能名称 |
 | 属性声明 | 属性クレーム | 속성 클레임 | 需结合实际 SAML UI 上下文确认是 Claim 还是 Attribute Statement |
-| 版本说明 | プラン | 요금제 | 当前英文映射为 Plans，需确认中文是否确指订阅版本 |
-| 告警策略管理 | アラート戦略管理 | 알림 전략 관리 | Guance 自有导航名称 |
+| 告警策略管理 | アラートポリシー管理 | 알림 정책 관리 | Guance 自有导航名称，采用自然的本地化表达 |
 
 ## 6. 主要术语参考
 

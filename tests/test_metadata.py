@@ -19,7 +19,7 @@ class MetadataTests(unittest.TestCase):
     def tearDown(self):
         self.temporary.cleanup()
 
-    def test_incremental_state_requires_file_hash_fingerprint_and_target(self):
+    def test_incremental_state_requires_success_file_hash_and_target(self):
         source_file = self.source / "guide.md"
         target_file = self.target / "guide.md"
         source_file.write_text("中文", encoding="utf-8")
@@ -33,7 +33,20 @@ class MetadataTests(unittest.TestCase):
 
         target_file.write_text("English", encoding="utf-8")
         changed = MetadataManager(self.target, self.source, "en", "fingerprint-b")
+        self.assertFalse(changed.needs_translation(Path("guide.md")))
+
+        source_file.write_text("修改后的中文", encoding="utf-8")
         self.assertTrue(changed.needs_translation(Path("guide.md")))
+
+    def test_failed_record_is_retried_even_when_target_exists(self):
+        source_file = self.source / "guide.md"
+        target_file = self.target / "guide.md"
+        source_file.write_text("中文", encoding="utf-8")
+        target_file.write_text("Old English", encoding="utf-8")
+        manager = MetadataManager(self.target, self.source, "en", "fingerprint")
+        manager.update_file_status(Path("guide.md"), False, {"error_message": "failed"})
+
+        self.assertTrue(manager.needs_translation(Path("guide.md")))
 
     def test_legacy_english_metadata_migrates_without_modifying_source(self):
         source_file = self.source / "guide.md"

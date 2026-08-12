@@ -59,6 +59,22 @@ def _fence_signature(text: str) -> List[Tuple[str, int]]:
 
 
 def _html_signature(text: str) -> List[Tuple[bool, str]]:
+    visible_lines = []
+    open_fence = None
+    for line in text.splitlines(keepends=True):
+        match = _FENCE_RE.match(line.rstrip("\r\n"))
+        if open_fence is None and match:
+            open_fence = (match.group(1)[0], len(match.group(1)))
+            continue
+        if open_fence is not None:
+            if match and match.group(1)[0] == open_fence[0] and len(match.group(1)) >= open_fence[1]:
+                open_fence = None
+            continue
+        visible_lines.append(line)
+    text = "".join(visible_lines)
+    text = re.sub(r"(`+)[\s\S]*?\1", "", text)
+    text = _TEMPLATE_RE.sub("", text)
+    text = re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
     return [(bool(match.group(1)), match.group(2).lower()) for match in _HTML_TAG_RE.finditer(text)]
 
 
@@ -98,33 +114,35 @@ def validate_translation(
     source_path: Path,
     check_chinese: bool,
     check_line_count: bool,
+    check_structure: bool = True,
 ) -> None:
     if not translated_text.strip():
         raise ValidationError("Translation result is empty")
-    if _fence_signature(source_text) != _fence_signature(translated_text):
-        raise ValidationError("Markdown code fence structure changed")
-    if [match.group(1) for match in _LINK_RE.finditer(source_text)] != [
-        match.group(1) for match in _LINK_RE.finditer(translated_text)
-    ]:
-        raise ValidationError("Markdown link or image target changed")
-    if _html_signature(source_text) != _html_signature(translated_text):
-        raise ValidationError("HTML tag names or order changed")
-    if _TEMPLATE_RE.findall(source_text) != _TEMPLATE_RE.findall(translated_text):
-        raise ValidationError("Template variables changed")
+    if check_structure:
+        if _fence_signature(source_text) != _fence_signature(translated_text):
+            raise ValidationError("Markdown code fence structure changed")
+        if [match.group(1) for match in _LINK_RE.finditer(source_text)] != [
+            match.group(1) for match in _LINK_RE.finditer(translated_text)
+        ]:
+            raise ValidationError("Markdown link or image target changed")
+        if _html_signature(source_text) != _html_signature(translated_text):
+            raise ValidationError("HTML tag names or order changed")
+        if _TEMPLATE_RE.findall(source_text) != _TEMPLATE_RE.findall(translated_text):
+            raise ValidationError("Template variables changed")
 
-    if source_path.name == ".pages" or source_path.suffix == ".pages":
-        try:
-            source_yaml = yaml.safe_load(source_text)
-            translated_yaml = yaml.safe_load(translated_text)
-        except yaml.YAMLError as exc:
-            raise ValidationError(f"Invalid .pages YAML: {exc}") from exc
-        _yaml_shape(source_yaml, translated_yaml)
-        source_paths: List[str] = []
-        translated_paths: List[str] = []
-        _path_values(source_yaml, source_paths)
-        _path_values(translated_yaml, translated_paths)
-        if source_paths != translated_paths:
-            raise ValidationError(".pages path, URL, or filename values changed")
+        if source_path.name == ".pages" or source_path.suffix == ".pages":
+            try:
+                source_yaml = yaml.safe_load(source_text)
+                translated_yaml = yaml.safe_load(translated_text)
+            except yaml.YAMLError as exc:
+                raise ValidationError(f"Invalid .pages YAML: {exc}") from exc
+            _yaml_shape(source_yaml, translated_yaml)
+            source_paths: List[str] = []
+            translated_paths: List[str] = []
+            _path_values(source_yaml, source_paths)
+            _path_values(translated_yaml, translated_paths)
+            if source_paths != translated_paths:
+                raise ValidationError(".pages path, URL, or filename values changed")
 
     if check_line_count:
         source_lines = max(1, len(source_text.splitlines()))

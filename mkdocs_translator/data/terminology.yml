@@ -1,17 +1,33 @@
-version: 1
+version: 2
 terms:
   "观测云":
     en: "Guance"
     ja: "Guance"
     ko: "Guance"
   "应用性能监测":
-    en: "APM"
-    ja: "APM"
-    ko: "APM"
+    en:
+      full: "Application Performance Monitoring"
+      short: "APM"
+    ja:
+      full: "アプリケーションパフォーマンスモニタリング"
+      short: "APM"
+    ko:
+      full: "애플리케이션 성능 모니터링"
+      short: "APM"
+    usage: "first_mention"
+    ui: "short"
   "用户访问监测":
-    en: "RUM"
-    ja: "RUM"
-    ko: "RUM"
+    en:
+      full: "Real User Monitoring"
+      short: "RUM"
+    ja:
+      full: "リアルユーザーモニタリング"
+      short: "RUM"
+    ko:
+      full: "실제 사용자 모니터링"
+      short: "RUM"
+    usage: "first_mention"
+    ui: "short"
   "体验版":
     en: "Free Plan"
     ja: "無料プラン"
@@ -28,14 +44,10 @@ terms:
     en: "Exclusive Plan"
     ja: "専用プラン"
     ko: "전용 플랜"
-  "指标":
-    en: "Metrics"
-    ja: "メトリクス"
-    ko: "메트릭"
   "指标集":
     en: "Measurement"
     ja: "メジャーメント"
-    ko: "측정값"
+    ko: "메저먼트"
   "资源目录":
     en: "Resource Catalog"
     ja: "リソースカタログ"
@@ -77,31 +89,23 @@ terms:
     ja: "サービスマップ"
     ko: "서비스 맵"
   "顶层 Span":
-    en: "Top Span"
+    en: "Top-level Span"
     ja: "トップレベルスパン"
-    ko: "최상위 수준 스팬"
+    ko: "최상위 스팬"
   "服务顶层 Span":
     en: "Service Entry Span"
     ja: "サービスエントリスパン"
     ko: "서비스 엔트리 스팬"
-  "页面":
-    en: "View"
-    ja: "ビュー"
-    ko: "보기"
-  "操作":
-    en: "Action"
-    ja: "アクション"
-    ko: "액션"
   "用户洞察":
     en: "User Analysis"
     ja: "ユーザー分析"
     ko: "사용자 분석"
   "可用性监测":
-    en: "Synthetic Tests"
+    en: "Synthetic Monitoring"
     ja: "Synthetic モニタリング"
     ko: "신서틱 모니터링"
   "自建节点":
-    en: "Self-built Nodes"
+    en: "Self-hosted Nodes"
     ja: "セルフホストノード"
     ko: "자체 호스팅 노드"
   "安全巡检":
@@ -164,14 +168,6 @@ terms:
     en: "SAML"
     ja: "SAML"
     ko: "SAML"
-  "存在":
-    en: "Exist"
-    ja: "存在する"
-    ko: "존재함"
-  "不存在":
-    en: "Not exist"
-    ja: "存在しない"
-    ko: "존재하지 않음"
   "智能巡检":
     en: "Intelligent Inspection"
     ja: "インテリジェントインスペクション"
@@ -289,9 +285,9 @@ terms:
     ja: "概要"
     ko: "개요"
   "版本说明":
-    en: "Plans"
-    ja: "プラン"
-    ko: "요금제"
+    en: "Version Information"
+    ja: "バージョン情報"
+    ko: "버전 정보"
   "付费计划与账单":
     en: "Plans & Billing"
     ja: "料金プランと請求"
@@ -309,19 +305,19 @@ terms:
     ja: "RUM PV"
     ko: "RUM PV"
   "相关配置":
-    en: "Configuration"
+    en: "Related Configuration"
     ja: "関連設定"
-    ko: "관련 구성"
+    ko: "관련 설정"
   "配置步骤":
-    en: "Configuration"
+    en: "Configuration Steps"
     ja: "設定手順"
-    ko: "구성 단계"
+    ko: "설정 단계"
   "列表操作":
-    en: "Options"
+    en: "List Actions"
     ja: "リスト操作"
     ko: "목록 작업"
   "相关操作":
-    en: "Options"
+    en: "Related Actions"
     ja: "関連操作"
     ko: "관련 작업"
   "时间控件":
@@ -345,15 +341,15 @@ terms:
     ja: "Lark"
     ko: "Lark"
   "告警策略管理":
-    en: "Alert Strategies"
-    ja: "アラート戦略管理"
-    ko: "알림 전략 관리"
+    en: "Alert Policy Management"
+    ja: "アラートポリシー管理"
+    ko: "알림 정책 관리"
   "企业微信":
     en: "WeCom"
     ja: "WeCom"
     ko: "WeCom"
   "批量操作":
-    en: "Batch operations"
+    en: "Batch Operations"
     ja: "一括操作"
     ko: "일괄 작업"
   "阿里云":
@@ -377,54 +373,274 @@ terms:
     ja: "Google Cloud"
     ko: "Google Cloud"
   "中间件":
-    en: "MIDDLEWARE"
+    en: "Middleware"
     ja: "ミドルウェア"
     ko: "미들웨어"
   "主机":
-    en: "HOST"
+    en: "Host"
     ja: "ホスト"
     ko: "호스트"
   "容器":
-    en: "CONTAINERS"
+    en: "Containers"
     ja: "コンテナ"
     ko: "컨테이너"
   "网络":
-    en: "NETWORK"
+    en: "Network"
     ja: "ネットワーク"
     ko: "네트워크"
   "缓存":
-    en: "CACHING"
+    en: "Cache"
     ja: "キャッシュ"
     ko: "캐시"
   "消息队列":
-    en: "MESSAGE QUEUES"
+    en: "Message Queues"
     ja: "メッセージキュー"
     ko: "메시지 큐"
   "数据库":
-    en: "DATABASE"
+    en: "Database"
     ja: "データベース"
     ko: "데이터베이스"
   "语言":
-    en: "LANGUAGE"
+    en: "Language"
     ja: "言語"
     ko: "언어"
   "链路追踪":
-    en: "APM"
-    ja: "APM"
-    ko: "APM"
-  "日志":
-    en: "LOG"
-    ja: "ログ"
-    ko: "로그"
-  "拨测":
-    en: "TESTING"
-    ja: "テスト"
-    ko: "테스트"
+    en: "Distributed Tracing"
+    ja: "分散型トレーシング"
+    ko: "분산 추적"
   "移动端":
-    en: "MOBILE"
+    en: "Mobile"
     ja: "モバイル"
     ko: "모바일"
   "会话重放":
-    en: "SESSION REPLAY"
+    en: "Session Replay"
     ja: "セッションリプレイ"
     ko: "세션 리플레이"
+
+  # Observability, APM, and RUM
+  "可观测性":
+    en: "Observability"
+    ja: "オブザーバビリティ"
+    ko: "관측 가능성"
+  "遥测数据":
+    en: "Telemetry Data"
+    ja: "テレメトリデータ"
+    ko: "텔레메트리 데이터"
+  "根 Span":
+    en: "Root Span"
+    ja: "ルートスパン"
+    ko: "루트 스팬"
+  "错误追踪":
+    en: "Error Tracking"
+    ja: "エラー追跡"
+    ko: "오류 추적"
+  "Profiling":
+    en: "Profiling"
+    ja: "プロファイリング"
+    ko: "프로파일링"
+  "火焰图":
+    en: "Flame Graph"
+    ja: "フレームグラフ"
+    ko: "플레임 그래프"
+  "瀑布图":
+    en: "Waterfall Chart"
+    ja: "ウォーターフォールチャート"
+    ko: "워터폴 차트"
+  "页面性能":
+    en: "Page Performance"
+    ja: "ページパフォーマンス"
+    ko: "페이지 성능"
+  "会话热图":
+    en: "Session Heatmap"
+    ja: "セッションヒートマップ"
+    ko: "세션 히트맵"
+  "漏斗分析":
+    en: "Funnel Analysis"
+    ja: "ファネル分析"
+    ko: "퍼널 분석"
+  "长任务":
+    en: "Long Task"
+    ja: "ロングタスク"
+    ko: "긴 작업"
+
+  # Logs, metrics, and infrastructure
+  "日志查看器":
+    en: "Log Explorer"
+    ja: "ログエクスプローラー"
+    ko: "로그 탐색기"
+  "日志采集":
+    en: "Log Collection"
+    ja: "ログ収集"
+    ko: "로그 수집"
+  "日志索引":
+    en: "Log Index"
+    ja: "ログインデックス"
+    ko: "로그 인덱스"
+  "指标采集":
+    en: "Metrics Collection"
+    ja: "メトリクス収集"
+    ko: "메트릭 수집"
+  "指标分析":
+    en: "Metrics Analysis"
+    ja: "メトリクス分析"
+    ko: "메트릭 분석"
+  "指标管理":
+    en: "Metrics Management"
+    ja: "メトリクス管理"
+    ko: "메트릭 관리"
+  "生成指标":
+    en: "Generate Metrics"
+    ja: "メトリクスを生成"
+    ko: "메트릭 생성"
+  "保留策略":
+    en: "Retention Policy"
+    ja: "保持ポリシー"
+    ko: "보존 정책"
+  "网络流":
+    en: "Network Flow"
+    ja: "ネットワークフロー"
+    ko: "네트워크 플로우"
+  "网络路径":
+    en: "Network Path"
+    ja: "ネットワークパス"
+    ko: "네트워크 경로"
+  "进程":
+    en: "Process"
+    ja: "プロセス"
+    ko: "프로세스"
+
+  # Synthetic Monitoring
+  "拨测任务":
+    en: "Synthetic Test"
+    ja: "Synthetic テスト"
+    ko: "신서틱 테스트"
+  "浏览器拨测":
+    en: "Browser Test"
+    ja: "ブラウザテスト"
+    ko: "브라우저 테스트"
+  "网络路径拨测":
+    en: "Network Path Test"
+    ja: "ネットワークパステスト"
+    ko: "네트워크 경로 테스트"
+  "自建节点管理":
+    en: "Self-hosted Node Management"
+    ja: "セルフホストノード管理"
+    ko: "자체 호스팅 노드 관리"
+
+  # Monitoring, alerting, and incident management
+  "监控器":
+    en: "Monitor"
+    ja: "モニター"
+    ko: "모니터"
+  "智能监控":
+    en: "Intelligent Monitoring"
+    ja: "インテリジェントモニタリング"
+    ko: "지능형 모니터링"
+  "告警策略":
+    en: "Alert Policy"
+    ja: "アラートポリシー"
+    ko: "알림 정책"
+  "告警聚合":
+    en: "Alert Aggregation"
+    ja: "アラート集約"
+    ko: "알림 집계"
+  "静默管理":
+    en: "Mute Management"
+    ja: "ミュート管理"
+    ko: "음소거 관리"
+  "故障列表":
+    en: "Incident List"
+    ja: "インシデント一覧"
+    ko: "인시던트 목록"
+  "故障详情":
+    en: "Incident Details"
+    ja: "インシデント詳細"
+    ko: "인시던트 상세"
+  "故障中心":
+    en: "Incident Center"
+    ja: "インシデントセンター"
+    ko: "인시던트 센터"
+  "故障分析看板":
+    en: "Incident Analysis Dashboard"
+    ja: "インシデント分析ダッシュボード"
+    ko: "인시던트 분석 대시보드"
+  "值班":
+    en: "On-Call"
+    ja: "オンコール"
+    ko: "온콜"
+  "未恢复事件":
+    en: "Unrecovered Events"
+    ja: "未復旧イベント"
+    ko: "미복구 이벤트"
+  "变更事件":
+    en: "Change Events"
+    ja: "変更イベント"
+    ko: "변경 이벤트"
+
+  # Unified Catalog and management
+  "统一目录":
+    en: "Unified Catalog"
+    ja: "統合カタログ"
+    ko: "통합 카탈로그"
+  "实体":
+    en: "Entity"
+    ja: "エンティティ"
+    ko: "엔터티"
+  "实体类型":
+    en: "Entity Type"
+    ja: "エンティティタイプ"
+    ko: "엔터티 유형"
+  "全景拓扑图":
+    en: "Topology View"
+    ja: "トポロジービュー"
+    ko: "토폴로지 뷰"
+  "工作空间":
+    en: "Workspace"
+    ja: "ワークスペース"
+    ko: "워크스페이스"
+  "空间设置":
+    en: "Workspace Settings"
+    ja: "ワークスペース設定"
+    ko: "워크스페이스 설정"
+  "数据转发":
+    en: "Data Forwarding"
+    ja: "データ転送"
+    ko: "데이터 전송"
+  "数据访问":
+    en: "Data Access"
+    ja: "データアクセス"
+    ko: "데이터 액세스"
+  "敏感数据扫描":
+    en: "Sensitive Data Scanning"
+    ja: "機密データスキャン"
+    ko: "민감 데이터 스캔"
+
+  # Billing
+  "费用中心":
+    en: "Billing Center"
+    ja: "請求センター"
+    ko: "청구 센터"
+  "费用结算方式":
+    en: "Payment Methods"
+    ja: "支払い方法"
+    ko: "결제 방식"
+  "账单明细":
+    en: "Billing Details"
+    ja: "請求明細"
+    ko: "청구 내역"
+  "计费项目":
+    en: "Billing Item"
+    ja: "課金項目"
+    ko: "과금 항목"
+  "代金券":
+    en: "Voucher"
+    ja: "クーポン"
+    ko: "바우처"
+  "预购卡":
+    en: "Prepaid Card"
+    ja: "プリペイドカード"
+    ko: "선불 카드"
+  "客户经理":
+    en: "Account Manager"
+    ja: "アカウントマネージャー"
+    ko: "고객 담당자"

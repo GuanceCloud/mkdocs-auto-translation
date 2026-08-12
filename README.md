@@ -81,11 +81,23 @@ docs/
 使用 `--glossary` 覆盖或补充内置词典：
 
 ```yaml
-version: 1
+version: 2
 terms:
   观测云:
     ja: Guance
     ko: Guance
+  应用性能监测:
+    en:
+      full: Application Performance Monitoring
+      short: APM
+    ja:
+      full: アプリケーションパフォーマンスモニタリング
+      short: APM
+    ko:
+      full: 애플리케이션 성능 모니터링
+      short: APM
+    usage: first_mention
+    ui: short
   自定义功能:
     en: Custom Feature
     ja: カスタム機能
@@ -100,11 +112,14 @@ mkdocs-translator \
   --glossary glossary.yml
 ```
 
-自定义词条允许只配置需要覆盖的语言。格式错误或未知语言字段会在调用模型前报错。
+自定义词条允许只配置需要覆盖的语言。普通固定词条可以继续使用 `version: 1`；
+`version: 2` 额外支持同时定义 `full` 和 `short` 的概念词。`usage: first_mention`
+表示 Markdown 标题或正文首次出现中文全称时使用“全称（缩写）”，后续使用缩写；
+`ui: short` 表示 YAML 导航、菜单、按钮等紧凑 UI 文本只使用缩写。格式错误或未知语言字段会在调用模型前报错。
 
 ## 增量状态与旧版迁移
 
-每种语言的状态保存在对应目标目录的 `.mkdocs-translator/metadata.json`。只有源文件 hash、目标语言、Prompt/术语指纹、成功状态和目标文件都有效时才跳过翻译。
+每种语言的状态保存在对应目标目录的 `.mkdocs-translator/metadata.json`。只要上次翻译成功、中文源文件 hash 未变化且目标译文仍然存在，就会跳过翻译。Prompt 和专业词典的修改不会触发已有文档重新翻译；指纹仅用于审计。
 
 英文首次运行时，如果新状态不存在而中文源目录存在旧版 `metadata.json`，程序会只读校验并导入仍然有效的英文成功记录。旧文件不会被修改或删除；日语和韩语不会导入旧状态。
 
@@ -120,11 +135,14 @@ mkdocs-translator \
 | `--workers` | 全局最大并发任务数 | `1` |
 | `--check-chinese` | 检查英语、韩语正文中的残留汉字；日语自动跳过 | `false` |
 | `--check-line-count` | 翻译前后行数差异不得超过 5% | `false` |
+| `--check-structure` / `--no-check-structure` | 是否保护并校验链接、代码围栏、HTML、模板变量和 `.pages` 结构 | `true` |
 | `--overwrite-resources` | 覆盖目标资源文件 | `false` |
 | `--delete-removed-resources` | 删除源目录中已不存在的资源 | `false` |
 | `--delete-removed-translations` | 删除已移除或已加入黑名单的译文和状态 | `false` |
 
 `--target-language` 与 `--target-languages` 互斥，必须且只能提供一个。
+
+使用 `--no-check-structure` 时，源文档会整篇原样发送给模型，不生成 `GXP_..._X` 保护标记，也不执行 Markdown/YAML 结构校验。空译文检查仍会执行；`--check-chinese` 和 `--check-line-count` 若显式启用也仍然有效。该模式可能接受模型对链接、代码、配置、HTML、模板变量或 `.pages` 结构的修改，请仅在能接受并人工复核这些风险时使用。
 
 ## 黑名单
 

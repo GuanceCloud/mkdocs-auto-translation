@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import queue
+import shutil
 import sys
 import threading
 import uuid
@@ -135,6 +136,17 @@ def _worker_task_totals(task_count: int, worker_count: int) -> List[int]:
     return [base + (1 if index < remainder else 0) for index in range(worker_count)]
 
 
+def _is_blank_source(path: Path) -> bool:
+    """Return whether a UTF-8 source contains only a BOM and whitespace."""
+    return not path.read_text(encoding="utf-8-sig").strip()
+
+
+def _copy_blank_source(source_file: Path, target_file: Path) -> None:
+    """Synchronize a blank source verbatim without sending it for translation."""
+    target_file.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source_file, target_file)
+
+
 def _resolve_target_directories(target: Path, languages: Tuple[str, ...], multi_mode: bool) -> Dict[str, Path]:
     return {
         language: (target / language if multi_mode else target).resolve()
@@ -209,6 +221,12 @@ def _collect_failures(contexts: Dict[str, LanguageContext]) -> List[Tuple[str, s
 @click.option("--delete-removed-translations", is_flag=True, help="Delete translated documents removed or blacklisted in source")
 @click.option("--check-chinese", is_flag=True, help="Reject residual Chinese text for English and Korean")
 @click.option("--check-line-count", is_flag=True, help="Reject translations whose line count differs by more than 5%")
+@click.option(
+    "--check-structure/--no-check-structure",
+    default=True,
+    show_default=True,
+    help="Protect and validate Markdown/YAML structure; disabling accepts raw model output",
+)
 def translate(
     source: Path,
     target: Path,
@@ -225,6 +243,7 @@ def translate(
     delete_removed_translations: bool,
     check_chinese: bool,
     check_line_count: bool,
+    check_structure: bool,
 ) -> None:
     """Translate Chinese MkDocs documents into English, Japanese, and/or Korean."""
     logging.basicConfig(
@@ -237,6 +256,13 @@ def translate(
         raise click.UsageError("Provide exactly one of --target-language or --target-languages")
     if workers < 1:
         raise click.UsageError("--workers must be at least 1")
+    if not check_structure:
+        warning = (
+            "Structure protection and validation are disabled; model changes to links, code, "
+            "HTML, templates, and .pages structure will not be rejected."
+        )
+        click.echo(f"Warning: {warning}", err=True)
+        logging.warning(warning)
 
     try:
         languages = (
@@ -262,8 +288,10 @@ def translate(
     prompts: Dict[str, PromptBundle] = {}
     for language in languages:
         terms, missing = terminology.for_language(language)
+        concepts, missing_concepts = terminology.concepts_for_language(language)
+        missing = tuple(dict.fromkeys((*missing, *missing_concepts)))
         profile = get_profile(language)
-        prompts[language] = build_prompt_bundle(profile, terms, missing)
+        prompts[language] = build_prompt_bundle(profile, terms, missing, concepts)
         if missing:
             logging.warning(
                 "[%s] %s glossary terms have no translation and will be handled by the model: %s",
@@ -310,10 +338,17 @@ def translate(
     tasks: List[TranslationTask] = []
     for source_file in source_files:
         relative_path = source_file.relative_to(source)
+        blank_source = _is_blank_source(source_file)
         for language in languages:
             context = contexts[language]
             if context.metadata.needs_translation(relative_path):
-                tasks.append(TranslationTask(language, source_file, relative_path))
+                if blank_source:
+                    _copy_blank_source(source_file, context.target_dir / relative_path)
+                    details = {"reason": "blank_source", "translation_time": 0}
+                    context.metadata.update_file_status(relative_path, True, details)
+                    context.record("skipped", relative_path, details)
+                else:
+                    tasks.append(TranslationTask(language, source_file, relative_path))
             else:
                 context.record("skipped", relative_path)
 
@@ -347,6 +382,7 @@ def translate(
                         api_key=effective_api_key,
                         check_chinese=check_chinese,
                         check_line_count=check_line_count,
+                        check_structure=check_structure,
                         base_url=base_url,
                         model=model,
                         system_prompt=context.prompt.system_prompt,

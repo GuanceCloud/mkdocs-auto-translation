@@ -171,7 +171,6 @@ class MetadataManager:
                 isinstance(record, dict)
                 and record.get("status") == "success"
                 and record.get("source_hash") == file_hash(source_file)
-                and record.get("translation_fingerprint") == self.translation_fingerprint
                 and target_file.is_file()
             )
 
