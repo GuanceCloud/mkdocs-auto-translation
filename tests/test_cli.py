@@ -93,6 +93,40 @@ class CliTests(unittest.TestCase):
             self.assertEqual(1, FakeTranslator.calls)
             self.assertIn("skipped=1", second.output)
 
+    def test_navigation_and_markdown_receive_same_product_terminology(self):
+        prompts_by_file = {}
+
+        class PromptCapturingTranslator(FakeTranslator):
+            def __init__(self, target_lang, **kwargs):
+                super().__init__(target_lang, **kwargs)
+                self.system_prompt = kwargs["system_prompt"]
+
+            def translate_file(self, source_path, target_path, **kwargs):
+                prompts_by_file[source_path.name] = self.system_prompt
+                return super().translate_file(source_path, target_path, **kwargs)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "zh"
+            source.mkdir()
+            (source / "index.md").write_text("# 工作区\n\n智能监控\n", encoding="utf-8")
+            (source / ".pages").write_text("nav:\n  - 工作区: index.md\n", encoding="utf-8")
+            args = [
+                "--source", str(source), "--target", str(root / "en"),
+                "--target-language", "en", "--workers", "1", "--api-key", "dummy",
+            ]
+            with patch("mkdocs_translator.cli.DocumentTranslator", PromptCapturingTranslator):
+                result = CliRunner().invoke(translate, args)
+            self.assertEqual(0, result.exit_code, result.output)
+            self.assertEqual({"index.md", ".pages"}, set(prompts_by_file))
+            self.assertEqual(prompts_by_file["index.md"], prompts_by_file[".pages"])
+            for term in (
+                "- 工作区: Work Area\n",
+                "- 工作空间: Workspace\n",
+                "- 智能监控: Smart Monitoring\n",
+            ):
+                self.assertIn(term, prompts_by_file[".pages"])
+
     def test_glossary_change_does_not_retranslate_existing_document(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

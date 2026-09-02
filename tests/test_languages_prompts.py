@@ -71,6 +71,38 @@ class LanguageAndPromptTests(unittest.TestCase):
         self.assertEqual("로그 탐색기", ko["日志查看器"])
         self.assertEqual("메저먼트", ko["指标集"])
 
+    def test_fixed_product_names_and_distinct_workspace_term(self):
+        terminology = load_terminology()
+        en, missing = terminology.for_language("en")
+        self.assertFalse(missing)
+        expected = {
+            "智能监控": "Smart Monitoring",
+            "工作区": "Work Area",
+            "工作空间": "Workspace",
+            "空间管理": "Workspace Management",
+            "空间设置": "Workspace Settings",
+        }
+        prompt = build_prompt_bundle(get_profile("en"), en).system_prompt
+        for source, translation in expected.items():
+            with self.subTest(source=source):
+                self.assertEqual(translation, en[source])
+                self.assertIn(f"- {source}: {translation}\n", prompt)
+        self.assertNotIn("- 智能监控: Intelligent Monitoring", prompt)
+        self.assertNotIn("- 工作区: Workspace", prompt)
+        self.assertIn("YAML/.pages 导航、菜单、Markdown 标题和正文", prompt)
+
+    def test_product_name_update_preserves_japanese_and_korean_labels(self):
+        terminology = load_terminology()
+        for language, monitoring, work_area in (
+            ("ja", "インテリジェントモニタリング", "ワークスペース"),
+            ("ko", "지능형 모니터링", "워크스페이스"),
+        ):
+            with self.subTest(language=language):
+                terms, missing = terminology.for_language(language)
+                self.assertFalse(missing)
+                self.assertEqual(monitoring, terms["智能监控"])
+                self.assertEqual(work_area, terms["工作区"])
+
     def test_custom_glossary_overrides_one_language_only(self):
         built_in = load_terminology()
         built_in_en, _ = built_in.for_language("en")
