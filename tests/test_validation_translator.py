@@ -7,8 +7,8 @@ from mkdocs_translator.validation import ValidationError, contains_han_in_transl
 
 
 class StubTranslator(DocumentTranslator):
-    def __init__(self, transform):
-        super().__init__("en", api_key="dummy", client=object(), system_prompt="prompt")
+    def __init__(self, transform, target_lang="en", check_chinese=False):
+        super().__init__(target_lang, api_key="dummy", client=object(), system_prompt="prompt", check_chinese=check_chinese)
         self.transform = transform
         self.last_input = None
 
@@ -18,6 +18,25 @@ class StubTranslator(DocumentTranslator):
 
 
 class ValidationAndTranslatorTests(unittest.TestCase):
+    def test_new_languages_apply_residual_han_check_appropriately(self):
+        for language, output, expected_success in (
+            ("zh-TW", "資料目錄", True),
+            ("id", "Katalog", True),
+            ("id", "Katalog 中文", False),
+        ):
+            with self.subTest(language=language, output=output), tempfile.TemporaryDirectory() as directory:
+                source = Path(directory) / "source.md"
+                target = Path(directory) / "target.md"
+                source.write_text("数据目录", encoding="utf-8")
+                translator = StubTranslator(lambda _text: output, target_lang=language, check_chinese=True)
+                success, details = translator.translate_file(source, target)
+                self.assertEqual(expected_success, success, details)
+                if expected_success:
+                    self.assertEqual(output, target.read_text(encoding="utf-8"))
+                else:
+                    self.assertIn("Chinese characters", details["error_message"])
+                    self.assertFalse(target.exists())
+
     def test_residual_han_check_ignores_protected_regions(self):
         protected = "`中文`\n````text\n中文\n````\n[link](https://example.com/中文)\n<<<中文>>>"
         self.assertFalse(contains_han_in_translatable_text(protected))

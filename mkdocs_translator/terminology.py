@@ -10,6 +10,11 @@ import yaml
 from .languages import LANGUAGE_PROFILES
 
 
+# Keep complete coverage for the original languages while new languages are
+# populated incrementally; missing translations are handled by the model.
+_REQUIRED_BUILT_IN_LANGUAGES = frozenset({"en", "ja", "ko"})
+
+
 class TerminologyError(ValueError):
     """Raised when a terminology file is invalid."""
 
@@ -129,7 +134,7 @@ def _validate_document(
                 f"{source_name}: unsupported language fields for '{source}': "
                 f"{', '.join(sorted(unknown_languages))}"
             )
-        if not allow_partial and language_fields != supported:
+        if not allow_partial and not _REQUIRED_BUILT_IN_LANGUAGES.issubset(language_fields):
             raise TerminologyError(f"{source_name}: '{source}' must define en, ja, and ko")
 
         is_concept = bool(policy_fields & set(translations)) or any(

@@ -56,6 +56,24 @@ terms:
     en: "Resource Class"
     ja: "リソースクラス"
     ko: "리소스 클래스"
+  "数据目录":
+    en: "Catalog"
+    ja: "カタログ"
+    ko: "카탈로그"
+    zh-TW: "資料目錄"
+    id: "Katalog"
+  "数据血缘":
+    en: "Lineage"
+    ja: "リネージ"
+    ko: "계보"
+    zh-TW: "資料血緣"
+    id: "Lineage"
+  "作业":
+    en: "Jobs"
+    ja: "ジョブ"
+    ko: "작업"
+    zh-TW: "作業"
+    id: "Job"
   "时间线":
     en: "Time Series"
     ja: "時系列"

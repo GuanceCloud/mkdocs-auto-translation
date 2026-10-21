@@ -1,14 +1,14 @@
 # MkDocs Translator
 
-MkDocs Translator 使用兼容 OpenAI 格式的大模型 API，把中文 MkDocs 文档一次翻译成英语、日语和韩语，并保持 Markdown、`.pages`、资源文件和目录结构。
+MkDocs Translator 使用兼容 OpenAI 格式的大模型 API，把简体中文 MkDocs 文档一次翻译成英语、日语、韩语、繁体中文和印尼语，并保持 Markdown、`.pages`、资源文件和目录结构。
 
 ## 功能
 
-- 单次运行支持 `en`、`ja`、`ko` 一种或多种语言
+- 单次运行支持 `en`、`ja`、`ko`、`zh-TW`、`id` 一种或多种语言
 - 所有 `(文档, 语言)` 任务共享一个全局 worker 上限
 - 每个语言目录维护独立增量状态
 - 自动迁移源目录中的旧版英文 `metadata.json`
-- 内置专业可观测性中英日韩术语，可由项目 YAML 覆盖
+- 内置专业可观测性术语，可由项目 YAML 覆盖；繁体中文和印尼语目前收录数据目录、数据血缘、作业三个词条
 - 翻译成功后才原子替换目标文件，失败时保留旧译文
 - 校验 Markdown 链接、图片、代码围栏、HTML、模板变量和 `.pages` YAML
 - 同步图片、CSS、JavaScript 等非翻译资源
@@ -46,6 +46,10 @@ mkdocs-translator \
 - 英语：`en`、`English`、`英语`、`英文`
 - 日语：`ja`、`Japanese`、`日语`、`日文`
 - 韩语：`ko`、`Korean`、`韩语`、`韩文`
+- 繁体中文：`zh-TW`、`zh_tw`、`zh-Hant`、`zh_hant`、`Traditional Chinese`、`繁体中文`、`繁體中文`、`繁体`、`繁體`
+- 印尼语：`id`、`Indonesian`、`Bahasa Indonesia`、`印尼语`、`印度尼西亚语`
+
+语言别名不区分大小写；多语言输出目录统一使用 `en`、`ja`、`ko`、`zh-TW`、`id`。
 
 ## 多语言运行
 
@@ -55,7 +59,7 @@ mkdocs-translator \
 mkdocs-translator \
   --source docs/zh \
   --target docs \
-  --target-languages en,ja,ko \
+  --target-languages en,ja,ko,zh-TW,id \
   --workers 10
 ```
 
@@ -70,11 +74,15 @@ docs/
 │       └── last-run.json
 ├── ja/
 │   └── .mkdocs-translator/
-└── ko/
+├── ko/
+│   └── .mkdocs-translator/
+├── zh-TW/
+│   └── .mkdocs-translator/
+└── id/
     └── .mkdocs-translator/
 ```
 
-`--workers 10` 表示三种语言合计最多同时执行 10 个模型请求，不会为每种语言分别创建 10 个 worker。
+`--workers 10` 表示所有目标语言合计最多同时执行 10 个模型请求，不会为每种语言分别创建 10 个 worker。
 
 ## 自定义术语
 
@@ -102,13 +110,15 @@ terms:
     en: Custom Feature
     ja: カスタム機能
     ko: 사용자 정의 기능
+    zh-TW: 自訂功能
+    id: Fitur Khusus
 ```
 
 ```bash
 mkdocs-translator \
   --source docs/zh \
   --target docs \
-  --target-languages en,ja,ko \
+  --target-languages en,ja,ko,zh-TW,id \
   --glossary glossary.yml
 ```
 
@@ -117,11 +127,22 @@ mkdocs-translator \
 表示 Markdown 标题或正文首次出现中文全称时使用“全称（缩写）”，后续使用缩写；
 `ui: short` 表示 YAML 导航、菜单、按钮等紧凑 UI 文本只使用缩写。格式错误或未知语言字段会在调用模型前报错。
 
+词典中的语言字段使用标准代码 `en`、`ja`、`ko`、`zh-TW`、`id`，中文源词作为词条键，无需另写简体中文字段。
+内置词典保留英、日、韩完整覆盖；繁体中文和印尼语逐步补充。缺少目标语言译法的词条会记录到日志，交由模型翻译，不会套用其他语言的词条。
+
+以下三个词条已按固定产品术语收录，保留指定拼写和大小写：
+
+| 简体中文 | 繁体中文（`zh-TW`） | 英语（`en`） | 日语（`ja`） | 韩语（`ko`） | 印尼语（`id`） |
+| --- | --- | --- | --- | --- | --- |
+| 数据目录 | 資料目錄 | Catalog | カタログ | 카탈로그 | Katalog |
+| 数据血缘 | 資料血緣 | Lineage | リネージ | 계보 | Lineage |
+| 作业 | 作業 | Jobs | ジョブ | 작업 | Job |
+
 ## 增量状态与旧版迁移
 
 每种语言的状态保存在对应目标目录的 `.mkdocs-translator/metadata.json`。只要上次翻译成功、中文源文件 hash 未变化且目标译文仍然存在，就会跳过翻译。Prompt 和专业词典的修改不会触发已有文档重新翻译；指纹仅用于审计。
 
-英文首次运行时，如果新状态不存在而中文源目录存在旧版 `metadata.json`，程序会只读校验并导入仍然有效的英文成功记录。旧文件不会被修改或删除；日语和韩语不会导入旧状态。
+英文首次运行时，如果新状态不存在而中文源目录存在旧版 `metadata.json`，程序会只读校验并导入仍然有效的英文成功记录。旧文件不会被修改或删除；其他语言不会导入旧状态。
 
 ## 主要参数
 
@@ -133,7 +154,7 @@ mkdocs-translator \
 | `--model` | 模型名称 | `gpt-4o` |
 | `--response-mode` | `streaming` 或 `blocking` | `streaming` |
 | `--workers` | 全局最大并发任务数 | `1` |
-| `--check-chinese` | 检查英语、韩语正文中的残留汉字；日语自动跳过 | `false` |
+| `--check-chinese` | 检查英语、韩语、印尼语正文中的残留汉字；日语和繁体中文自动跳过 | `false` |
 | `--check-line-count` | 翻译前后行数差异不得超过 5% | `false` |
 | `--check-structure` / `--no-check-structure` | 是否保护并校验链接、代码围栏、HTML、模板变量和 `.pages` 结构 | `true` |
 | `--overwrite-resources` | 覆盖目标资源文件 | `false` |

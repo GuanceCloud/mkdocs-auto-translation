@@ -59,6 +59,39 @@ LANGUAGE_PROFILES: Dict[str, LanguageProfile] = {
 - 중국어 어순을 그대로 옮기지 말고 관측 가능성, 클라우드, 보안 분야의 정착된 표현을 사용하세요.
 </target_language_rules>""",
     ),
+    "zh-TW": LanguageProfile(
+        code="zh-TW",
+        display_name="繁体中文",
+        model_name="Traditional Chinese (Taiwan)",
+        aliases=(
+            "zh-TW", "zh_tw", "zh-Hant", "zh_hant", "traditional chinese",
+            "繁体中文", "繁體中文", "繁体", "繁體",
+        ),
+        profile_version=1,
+        supports_han_residual_check=False,
+        rules="""<target_language_rules>
+- 目標語言是繁體中文，使用臺灣技術文件常用的專業、簡潔表達。
+- 將供人閱讀的簡體中文轉為繁體中文，並採用自然的在地用語，而非僅逐字轉換字形。
+- 內文使用「，」「。」及全形括號等繁體中文標點；UI 標籤、標題和表格項目使用簡潔的名詞片語。
+- 保留 APM、RUM、SLO、API、SDK、HTTP、JSON、YAML 等標準縮寫及產品名稱。
+- 使用可觀測性、雲端運算和資訊安全領域的慣用術語，並嚴格遵循指定詞典。
+</target_language_rules>""",
+    ),
+    "id": LanguageProfile(
+        code="id",
+        display_name="印尼语",
+        model_name="Indonesian",
+        aliases=("id", "indonesian", "bahasa indonesia", "印尼语", "印度尼西亚语"),
+        profile_version=1,
+        supports_han_residual_check=True,
+        rules="""<target_language_rules>
+- The target language is Indonesian (Bahasa Indonesia). Use concise, professional technical documentation style.
+- Use natural Indonesian grammar and standard Latin punctuation. Do not copy Chinese word order or English plural endings into Indonesian prose.
+- Use concise noun phrases for UI labels, headings, and table labels, preserving the exact spelling and capitalization of glossary terms.
+- Preserve established abbreviations and product names such as APM, RUM, SLO, API, SDK, HTTP, JSON, YAML, DataKit, and Guance.
+- Use terminology customary in Indonesian observability, cloud computing, and security documentation.
+</target_language_rules>""",
+    ),
 }
 
 

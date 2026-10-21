@@ -15,7 +15,7 @@ from typing import Dict, List, Optional, Tuple
 import click
 from tqdm import tqdm
 
-from .languages import get_profile, normalize_language, parse_languages
+from .languages import get_profile, normalize_language, parse_languages, supported_languages
 from .metadata import METADATA_VERSION, MetadataManager
 from .prompts import PromptBundle, build_prompt_bundle
 from .terminology import TerminologyError, load_terminology
@@ -208,7 +208,7 @@ def _collect_failures(contexts: Dict[str, LanguageContext]) -> List[Tuple[str, s
 @click.command()
 @click.option("--source", required=True, type=click.Path(exists=True, file_okay=False, path_type=Path), help="Source Chinese document directory")
 @click.option("--target", required=True, type=click.Path(file_okay=False, path_type=Path), help="Language directory in single mode, or language root in multi-language mode")
-@click.option("--target-language", help="One target language: en, ja, or ko")
+@click.option("--target-language", help=f"One target language: {', '.join(supported_languages())}")
 @click.option("--target-languages", help="Comma-separated target languages; --target is their common root")
 @click.option("--glossary", type=click.Path(exists=True, dir_okay=False, path_type=Path), help="Custom YAML terminology overrides")
 @click.option("--api-key", help="LLM API key (compatible with OpenAI format)")
@@ -219,7 +219,7 @@ def _collect_failures(contexts: Dict[str, LanguageContext]) -> List[Tuple[str, s
 @click.option("--overwrite-resources", is_flag=True, help="Overwrite existing resource files")
 @click.option("--delete-removed-resources", is_flag=True, help="Delete target resources removed from source")
 @click.option("--delete-removed-translations", is_flag=True, help="Delete translated documents removed or blacklisted in source")
-@click.option("--check-chinese", is_flag=True, help="Reject residual Chinese text for English and Korean")
+@click.option("--check-chinese", is_flag=True, help="Reject residual Chinese text for English, Korean, and Indonesian; skipped for Japanese and Traditional Chinese")
 @click.option("--check-line-count", is_flag=True, help="Reject translations whose line count differs by more than 5%")
 @click.option(
     "--check-structure/--no-check-structure",
@@ -245,7 +245,7 @@ def translate(
     check_line_count: bool,
     check_structure: bool,
 ) -> None:
-    """Translate Chinese MkDocs documents into English, Japanese, and/or Korean."""
+    """Translate Chinese MkDocs documents into English, Japanese, Korean, Traditional Chinese, and/or Indonesian."""
     logging.basicConfig(
         filename="translation.log",
         level=logging.INFO,
@@ -300,7 +300,7 @@ def translate(
                 ", ".join(missing),
             )
         if check_chinese and not profile.supports_han_residual_check:
-            logging.info("[%s] Chinese residual check disabled because Japanese uses Han characters", language)
+            logging.info("[%s] Chinese residual check disabled because the target language uses Han characters", language)
 
     contexts: Dict[str, LanguageContext] = {}
     try:

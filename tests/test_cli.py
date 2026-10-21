@@ -236,16 +236,16 @@ class CliTests(unittest.TestCase):
                     [
                         "--source", str(source),
                         "--target", str(docs),
-                        "--target-languages", "en,ja,ko",
+                        "--target-languages", "en,ja,ko,zh-Hant,印尼语",
                         "--workers", "10",
                         "--api-key", "dummy",
                     ],
                 )
             self.assertEqual(0, result.exit_code, result.output)
-            self.assertEqual(30, FakeTranslator.calls)
+            self.assertEqual(50, FakeTranslator.calls)
             self.assertLessEqual(FakeTranslator.max_active, 10)
             self.assertGreater(FakeTranslator.max_active, 1)
-            for language in ("en", "ja", "ko"):
+            for language in ("en", "ja", "ko", "zh-TW", "id"):
                 self.assertTrue((docs / language / "0.md").is_file())
                 metadata = json.loads(
                     (docs / language / ".mkdocs-translator" / "metadata.json").read_text(encoding="utf-8")
@@ -256,9 +256,32 @@ class CliTests(unittest.TestCase):
                 json.loads(
                     (docs / language / ".mkdocs-translator" / "last-run.json").read_text(encoding="utf-8")
                 )["run_id"]
-                for language in ("en", "ja", "ko")
+                for language in ("en", "ja", "ko", "zh-TW", "id")
             }
             self.assertEqual(1, len(run_ids))
+
+    def test_new_languages_support_single_mode_and_incremental_skip(self):
+        for alias, language in (("繁体中文", "zh-TW"), ("Bahasa Indonesia", "id")):
+            with self.subTest(language=language), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                source = root / "zh"
+                target = root / "output"
+                source.mkdir()
+                (source / "index.md").write_text("数据目录", encoding="utf-8")
+                args = [
+                    "--source", str(source), "--target", str(target),
+                    "--target-language", alias, "--api-key", "dummy",
+                ]
+                calls_before = FakeTranslator.calls
+                with patch("mkdocs_translator.cli.DocumentTranslator", FakeTranslator):
+                    first = CliRunner().invoke(translate, args)
+                    second = CliRunner().invoke(translate, args)
+                self.assertEqual(0, first.exit_code, first.output)
+                self.assertEqual(0, second.exit_code, second.output)
+                self.assertEqual(calls_before + 1, FakeTranslator.calls)
+                self.assertEqual(f"{language}: translated", (target / "index.md").read_text(encoding="utf-8"))
+                self.assertFalse((target / language).exists())
+                self.assertIn("skipped=1", second.output)
 
     def test_worker_task_totals_are_balanced_and_cover_every_task(self):
         totals = _worker_task_totals(task_count=64, worker_count=3)

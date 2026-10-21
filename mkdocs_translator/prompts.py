@@ -58,7 +58,7 @@ def _format_concepts(language: str, concepts: Mapping[str, ConceptRule]) -> str:
         "5. 中文全称旁已经带有相同缩写时，只输出一次“全称（缩写）”，不得重复缩写。",
     ]
     for source, rule in sorted(concepts.items()):
-        if language == "ja":
+        if language in {"ja", "zh-TW"}:
             separator, closing = "（", "）"
         elif language == "ko":
             separator, closing = "(", ")"

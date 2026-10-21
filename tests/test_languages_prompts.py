@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from mkdocs_translator.languages import get_profile, normalize_language, parse_languages
+from mkdocs_translator.languages import get_profile, normalize_language, parse_languages, supported_languages
 from mkdocs_translator.prompts import build_prompt_bundle
 from mkdocs_translator.terminology import TerminologyError, load_terminology
 
@@ -13,6 +13,13 @@ class LanguageAndPromptTests(unittest.TestCase):
         self.assertEqual("ja", normalize_language("日文"))
         self.assertEqual("ko", normalize_language("韩语"))
         self.assertEqual(("ja", "en", "ko"), parse_languages("ja,英语,ko,ja"))
+        for alias in ("ZH-tw", "zh_tw", "zh-Hant", "zh_hant", "Traditional Chinese", "繁体中文", "繁體中文"):
+            with self.subTest(alias=alias):
+                self.assertEqual("zh-TW", normalize_language(alias))
+        for alias in ("ID", "Indonesian", "Bahasa Indonesia", "印尼语", "印度尼西亚语"):
+            with self.subTest(alias=alias):
+                self.assertEqual("id", normalize_language(alias))
+        self.assertEqual(("zh-TW", "id", "en"), parse_languages("繁体中文,印尼语,zh-Hant,en,id"))
         with self.assertRaises(ValueError):
             parse_languages("en,,ko")
         with self.assertRaises(ValueError):
@@ -21,7 +28,7 @@ class LanguageAndPromptTests(unittest.TestCase):
     def test_each_prompt_has_only_its_language_terminology(self):
         terminology = load_terminology()
         prompts = {}
-        for language in ("en", "ja", "ko"):
+        for language in supported_languages():
             terms, missing = terminology.for_language(language)
             concepts, missing_concepts = terminology.concepts_for_language(language)
             prompts[language] = build_prompt_bundle(
@@ -36,6 +43,25 @@ class LanguageAndPromptTests(unittest.TestCase):
         self.assertNotIn("서비스 맵", prompts["ja"].system_prompt)
         self.assertNotIn("サービスマップ", prompts["ko"].system_prompt)
         self.assertEqual("Service Map", prompts["en"].terminology["服务拓扑"])
+        self.assertIn("目標語言是繁體中文", prompts["zh-TW"].system_prompt)
+        self.assertIn("Indonesian (Bahasa Indonesia)", prompts["id"].system_prompt)
+        catalog_labels = {
+            "en": "Catalog", "ja": "カタログ", "ko": "카탈로그",
+            "zh-TW": "資料目錄", "id": "Katalog",
+        }
+        for language, label in catalog_labels.items():
+            with self.subTest(language=language):
+                prompt = prompts[language].system_prompt
+                self.assertIn(f"- 数据目录: {label}\n", prompt)
+                for other_language, other_label in catalog_labels.items():
+                    if other_language != language:
+                        self.assertNotIn(f"- 数据目录: {other_label}\n", prompt)
+        for language in ("zh-TW", "id"):
+            with self.subTest(language=language):
+                self.assertIn("服务拓扑", prompts[language].missing_terms)
+                self.assertIn("应用性能监测", prompts[language].missing_terms)
+                self.assertNotIn("服务拓扑", prompts[language].terminology)
+                self.assertNotIn("应用性能监测", prompts[language].concepts)
 
     def test_acronym_concepts_have_first_mention_and_ui_rules(self):
         terminology = load_terminology()
@@ -138,6 +164,43 @@ class LanguageAndPromptTests(unittest.TestCase):
             path.write_text("version: 1\nterms:\n  foo:\n    1: bar\n", encoding="utf-8")
             with self.assertRaises(TerminologyError):
                 load_terminology(path)
+
+    def test_new_languages_allow_custom_fixed_and_concept_terms(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "glossary.yml"
+            path.write_text(
+                """version: 2
+terms:
+  数据目录:
+    zh-TW: 自訂目錄
+    id: Katalog Khusus
+  应用性能监测:
+    zh-TW:
+      full: 應用程式效能監控
+      short: APM
+    id:
+      full: Pemantauan Kinerja Aplikasi
+      short: APM
+    usage: first_mention
+    ui: short
+""",
+                encoding="utf-8",
+            )
+            terminology = load_terminology(path)
+            for language, label, first_mention in (
+                ("zh-TW", "自訂目錄", "應用程式效能監控（APM）"),
+                ("id", "Katalog Khusus", "Pemantauan Kinerja Aplikasi (APM)"),
+            ):
+                with self.subTest(language=language):
+                    terms, missing = terminology.for_language(language)
+                    concepts, missing_concepts = terminology.concepts_for_language(language)
+                    self.assertEqual(label, terms["数据目录"])
+                    self.assertNotIn("应用性能监测", missing)
+                    self.assertNotIn("应用性能监测", missing_concepts)
+                    prompt = build_prompt_bundle(get_profile(language), terms, concepts=concepts)
+                    self.assertIn(f"首次出现={first_mention}", prompt.system_prompt)
+            self.assertEqual("Catalog", terminology.for_language("en")[0]["数据目录"])
+            self.assertEqual("APM", terminology.concepts_for_language("en")[0]["应用性能监测"].short)
 
     def test_version_one_fixed_value_can_override_a_concept_language(self):
         with tempfile.TemporaryDirectory() as directory:
